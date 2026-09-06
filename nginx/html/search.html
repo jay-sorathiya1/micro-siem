@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecurePortal // Search</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+    background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #0f0c29);
+    background-size: 400% 400%;
+    animation: gradientShift 12s ease infinite;
+    padding: 40px 20px;
+  }
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .container { max-width: 640px; margin: 0 auto; }
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 30px;
+  }
+  h1 { color: #00ffe1; font-size: 18px; letter-spacing: 2px; text-shadow: 0 0 12px #00ffe1; }
+  .logout { color: #ff3860; font-size: 11px; text-decoration: none; letter-spacing: 1px; }
+  .search-box {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(0,255,225,0.25);
+    border-radius: 12px; padding: 24px; backdrop-filter: blur(14px);
+  }
+  form { display: flex; gap: 10px; }
+  input {
+    flex: 1; padding: 12px 14px; background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(0,255,225,0.3); border-radius: 8px;
+    color: #e0f7ff; font-family: 'Courier New', monospace; font-size: 14px; outline: none;
+  }
+  button {
+    padding: 12px 20px; background: linear-gradient(90deg, #00ffe1, #7000ff);
+    border: none; border-radius: 8px; color: #0a0a1a; font-weight: bold;
+    letter-spacing: 1px; cursor: pointer; text-transform: uppercase; font-size: 12px;
+  }
+  #results {
+    margin-top: 20px; padding: 16px; background: rgba(0,0,0,0.3);
+    border-radius: 8px; color: #cfe; font-size: 13px; min-height: 20px;
+  }
+  .note { margin-top: 20px; font-size: 10px; color: #556; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>&gt;_ SEARCH PORTAL</h1>
+      <a class="logout" href="index.html">LOGOUT</a>
+    </div>
+    <div class="search-box">
+      <form id="searchForm">
+        <input type="text" id="query" placeholder="Search records..." autocomplete="off">
+        <button type="submit">Search</button>
+      </form>
+      <div id="results"></div>
+    </div>
+    <div class="note">Micro-SIEM Demo &mdash; Search Portal (query reflected in page, unsanitized by design)</div>
+  </div>
+
+  <script>
+    // Reflect the query straight from the URL, if present (GET-based search)
+    const params = new URLSearchParams(window.location.search);
+    const initialQuery = params.get("q");
+    if (initialQuery !== null) {
+      document.getElementById("query").value = initialQuery;
+      renderResults(initialQuery);
+    }
+
+    document.getElementById("searchForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = document.getElementById("query").value;
+      // Reload with ?q= so the query lands in the URL -> Nginx access log -> detection pipeline
+      window.location.href = "search.html?q=" + encodeURIComponent(q);
+    });
+
+    function renderResults(query) {
+      const resultsDiv = document.getElementById("results");
+      // Intentionally vulnerable: query reflected via innerHTML, no escaping.
+      // This is the demo attack target - do NOT do this in a real application.
+      resultsDiv.innerHTML = "You searched for: " + query + "<br><br>No records found.";
+    }
+  </script>
+</body>
+</html>

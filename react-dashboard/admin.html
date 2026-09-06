@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TERMINAL-SIEM // Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #020617;
+            --surface: #0f172a;
+            --border: #1e293b;
+            --accent: #38bdf8;
+            --text-dim: #64748b;
+        }
+        body {
+            background-color: var(--bg);
+            color: #f1f5f9;
+            font-family: 'Inter', sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            font-size: 13px;
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+        .sidebar { background-color: #020617; border-right: 1px solid var(--border); width: 220px; }
+        .nav-link { color: var(--text-dim); transition: all 0.15s; border-left: 2px solid transparent; }
+        .nav-link.active { color: white; background: #1e293b; border-left: 2px solid var(--accent); }
+        .panel { background: var(--surface); border: 1px solid var(--border); min-height: 0; }
+        .chart-box { position: relative; flex-grow: 1; min-height: 0; }
+        .chart-box canvas { position: absolute !important; top: 0; left: 0; width: 100% !important; height: 100% !important; }
+        .view-section { display: none; height: 100%; min-height: 0; flex-direction: column; }
+        .view-section.active { display: flex; }
+        th { text-align: left; font-size: 10px; text-transform: uppercase; color: var(--text-dim); padding: 8px; border-bottom: 1px solid var(--border); }
+        td { padding: 8px; border-bottom: 1px solid #1e293b66; vertical-align: middle; }
+        tr:hover { background: #1e293b33; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #334155; }
+
+        /* --- Mobile responsive --- */
+        @media (max-width: 768px) {
+            body { height: auto; min-height: 100vh; overflow-y: auto; font-size: 12px; }
+            body.flex { flex-direction: column; }
+            .sidebar { width: 100%; flex-direction: row; align-items: center; justify-content: space-between; padding: 8px 12px; }
+            .sidebar > div:first-child { padding: 0; }
+            .sidebar nav { display: none; }
+            .sidebar > div:last-child { display: none; }
+            #mobile-nav { display: flex !important; }
+            main { height: auto; }
+            header { padding: 8px 12px; height: auto; flex-wrap: wrap; gap: 6px; }
+            .p-6 { padding: 12px !important; }
+            .grid-cols-4 { grid-template-columns: repeat(2, 1fr) !important; }
+            .grid-cols-3 { grid-template-columns: 1fr !important; height: auto !important; flex-grow: 0 !important; }
+            .grid-cols-3 .panel { height: 200px; }
+            table { font-size: 10px; }
+            .panel canvas { max-height: 160px; }
+            main { padding-bottom: 50px; }
+        }
+        #mobile-nav { display: none; }
+    </style>
+</head>
+<body class="flex">
+
+    <!-- Mobile-only view switcher (sidebar nav hidden below 768px) -->
+    <div id="mobile-nav" style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; background: #020617; border-top: 1px solid #1e293b; justify-content: space-around; padding: 8px 0;">
+        <button onclick="setView('dashboard')" class="text-[10px] uppercase font-bold text-slate-400">Dashboard</button>
+        <button onclick="setView('logs')" class="text-[10px] uppercase font-bold text-slate-400">Logs</button>
+        <button onclick="setView('threats')" class="text-[10px] uppercase font-bold text-slate-400">Threats</button>
+    </div>
+
+    <!-- NAVIGATION SIDEBAR -->
+    <aside class="sidebar flex flex-col shrink-0">
+        <div class="p-5 flex items-center gap-3">
+            <div class="w-2 h-2 bg-sky-500 rounded-full shadow-[0_0_8px_#38bdf8]"></div>
+            <h1 class="font-bold tracking-tighter text-sm uppercase">Micro-SIEM <span class="font-light opacity-50">Admin</span></h1>
+        </div>
+
+        <nav class="mt-4 flex-grow">
+            <div onclick="setView('dashboard')" id="btn-dashboard" class="nav-link active px-5 py-3 flex items-center gap-3 cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7"></path></svg> Dashboard
+            </div>
+            <div onclick="setView('logs')" id="btn-logs" class="nav-link px-5 py-3 flex items-center gap-3 cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> All Logs
+            </div>
+            <div onclick="setView('threats')" id="btn-threats" class="nav-link px-5 py-3 flex items-center gap-3 cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Threats &amp; Action
+            </div>
+        </nav>
+
+        <div class="p-5 border-t border-slate-800 mono text-[9px] text-slate-500">
+            SYSTEM: v1.0-LIVE<br>
+            SOURCE: auth.log + web + nginx<br>
+            <span id="uptime-display">Uptime: --</span><br>
+            <button onclick="logout()" class="mt-2 text-rose-500 uppercase font-bold tracking-wide">Logout &rarr;</button>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-grow flex flex-col" style="min-height: 0;">
+
+        <!-- HEADER -->
+        <header class="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/20">
+            <div class="flex items-center gap-2">
+                <span id="view-indicator" class="text-[11px] uppercase tracking-widest text-slate-400 font-semibold">Dashboard</span>
+            </div>
+            <div class="flex items-center gap-6">
+                <div class="mono text-[10px] text-slate-500" id="live-clock"></div>
+                <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span class="text-[10px] uppercase font-bold text-slate-300">Admin_Console</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- VIEW: DASHBOARD -->
+        <div id="view-dashboard" class="view-section active p-6">
+            <div class="grid grid-cols-4 gap-4 mb-6">
+                <div class="panel p-3 border-l-2 border-l-sky-500">
+                    <div class="text-[10px] uppercase text-slate-500 font-bold mb-1">Total Logs</div>
+                    <div class="text-xl font-medium tracking-tight" id="stat-logs">0</div>
+                </div>
+                <div class="panel p-3 border-l-2 border-l-rose-500">
+                    <div class="text-[10px] uppercase text-slate-500 font-bold mb-1">Active Alerts</div>
+                    <div class="text-xl font-medium tracking-tight text-rose-500" id="stat-alerts">0</div>
+                </div>
+                <div class="panel p-3 border-l-2 border-l-slate-700">
+                    <div class="text-[10px] uppercase text-slate-500 font-bold mb-1">Suspicious IPs</div>
+                    <div class="text-xl font-medium tracking-tight" id="stat-ips">0</div>
+                </div>
+                <div class="panel p-3 border-l-2 border-l-green-600">
+                    <div class="text-[10px] uppercase text-slate-500 font-bold mb-1">Login Success Rate</div>
+                    <div class="text-xl font-medium tracking-tight text-green-500" id="stat-success-rate">--%</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4 flex-grow" style="min-height: 0;">
+                <div class="panel p-4 flex flex-col">
+                    <span class="text-[10px] font-bold uppercase mb-4 text-slate-500 tracking-widest">Login Auth Status</span>
+                    <div class="chart-box"><canvas id="loginChart"></canvas></div>
+                </div>
+                <div class="panel p-4 flex flex-col">
+                    <span class="text-[10px] font-bold uppercase mb-4 text-slate-500 tracking-widest">Log Activity (Live)</span>
+                    <div class="chart-box"><canvas id="lineChart"></canvas></div>
+                </div>
+                <div class="panel p-4 flex flex-col">
+                    <span class="text-[10px] font-bold uppercase mb-4 text-slate-500 tracking-widest">Attack Vectors Detected</span>
+                    <div class="chart-box"><canvas id="barChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: LOGS -->
+        <div id="view-logs" class="view-section p-6">
+            <div class="panel h-full overflow-hidden flex flex-col">
+                <div class="bg-slate-800/30 p-2 border-b border-slate-800 flex justify-between">
+                    <span class="text-[10px] font-bold uppercase">System Event Stream</span>
+                    <span class="mono text-[10px] text-sky-500">Filtering: ALL_TRAFFIC</span>
+                </div>
+                <div class="overflow-y-auto flex-grow mono text-[11px]">
+                    <table class="w-full border-collapse">
+                        <thead>
+                            <tr><th>Timestamp</th><th>Source Type</th><th>Source IP</th><th>Detail</th></tr>
+                        </thead>
+                        <tbody id="log-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: THREATS -->
+        <div id="view-threats" class="view-section p-6">
+            <div class="panel h-full flex flex-col">
+                <div class="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+                    <h3 class="text-xs font-bold uppercase tracking-widest">Active Alerts</h3>
+                    <div class="px-2 py-1 bg-rose-500/10 text-rose-500 text-[10px] border border-rose-500/20 font-bold uppercase" id="threat-count-badge">0 ACTIVE</div>
+                </div>
+                <div class="overflow-y-auto flex-grow">
+                    <table class="w-full">
+                        <thead>
+                            <tr><th>Source IP</th><th>Severity</th><th>Alert Type</th><th>MITRE ID</th><th>Time</th><th>Mitigation</th></tr>
+                        </thead>
+                        <tbody id="threat-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- MODAL (Mitigation Console) - decorative only, no real action wired -->
+    <div id="modal" class="fixed inset-0 bg-black/90 hidden items-center justify-center z-50">
+        <div class="panel w-[400px] shadow-2xl">
+            <div class="p-4 border-b border-slate-800 flex justify-between bg-slate-900/50">
+                <span class="text-[10px] font-bold uppercase tracking-widest text-slate-200">Security Action Panel</span>
+                <button onclick="closeModal()" class="text-slate-500 hover:text-white">✕</button>
+            </div>
+            <div class="p-6">
+                <div class="mb-6">
+                    <div class="text-[10px] text-slate-500 uppercase mb-1">Target Resource</div>
+                    <div class="mono text-lg text-sky-400" id="target-ip-display">0.0.0.0</div>
+                </div>
+                <div class="grid grid-cols-1 gap-3">
+                    <button onclick="takeAction('IP BLOCK')" class="bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold py-3 uppercase tracking-widest rounded-sm transition-all">Execute IP Level Block</button>
+                    <button onclick="takeAction('USER BLOCK')" class="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold py-3 uppercase tracking-widest rounded-sm transition-all">Suspend Related User</button>
+                    <button onclick="closeModal()" class="text-slate-500 text-[10px] uppercase font-bold py-2">Dismiss Action</button>
+                </div>
+                <div class="mt-4 text-[9px] text-slate-600 uppercase tracking-wide">
+                    Note: buttons are placeholders — no real block action is wired yet (planned post-midterm).
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = window.MICRO_SIEM_API_URL || `http://${window.location.hostname}:8000`;
+        const startTime = Date.now();
+
+        // --- Session guard: redirect to login if no valid token ---
+        const SIEM_TOKEN = sessionStorage.getItem("siem_token");
+        if (!SIEM_TOKEN) {
+            window.location.href = "login.html";
+        }
+        function authFetch(url) {
+            return fetch(url, { headers: { "Authorization": "Bearer " + SIEM_TOKEN } })
+                .then(res => {
+                    if (res.status === 401) {
+                        sessionStorage.removeItem("siem_token");
+                        sessionStorage.removeItem("siem_role");
+                        window.location.href = "login.html";
+                        throw new Error("Session expired");
+                    }
+                    return res.json();
+                });
+        }
+        function logout() {
+            fetch(`${API_URL}/auth/logout`, { method: "POST", headers: { "Authorization": "Bearer " + SIEM_TOKEN } })
+                .finally(() => {
+                    sessionStorage.clear();
+                    window.location.href = "login.html";
+                });
+        }
+
+        // --- VIEW SWITCHER ---
+        function setView(view) {
+            document.querySelectorAll('.view-section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            document.getElementById('view-'+view).classList.add('active');
+            document.getElementById('btn-'+view).classList.add('active');
+            document.getElementById('view-indicator').innerText = view;
+        }
+
+        // --- CLOCK + UPTIME (Asia/Kolkata) ---
+        setInterval(() => {
+            const now = new Date();
+            const istString = now.toLocaleString('en-GB', {
+                timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+            }).replace(',', '');
+            document.getElementById('live-clock').innerText = istString + " IST";
+            const upSec = Math.floor((Date.now() - startTime) / 1000);
+            const h = Math.floor(upSec / 3600), m = Math.floor((upSec % 3600) / 60), s = upSec % 60;
+            document.getElementById('uptime-display').innerText = `Uptime: ${h}h ${m}m ${s}s`;
+        }, 1000);
+
+        // --- CHART INSTANCES ---
+        const themeColors = { blue: '#0ea5e9', slate: '#1e293b', rose: '#f43f5e', grid: '#1e293b66', text: '#64748b' };
+        const noLegendConfig = { maintainAspectRatio: false, plugins: { legend: { display: false } } };
+        const donutConfig = {
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10 }, color: themeColors.text } } }
+        };
+
+        let loginChart, lineChart, barChart;
+
+        function initCharts() {
+            loginChart = new Chart(document.getElementById('loginChart'), {
+                type: 'doughnut',
+                data: { labels: ['Success', 'Failed'], datasets: [{ data: [0, 0], backgroundColor: [themeColors.blue, themeColors.rose], borderWidth: 0 }] },
+                options: { ...donutConfig, cutout: '85%' }
+            });
+
+            lineChart = new Chart(document.getElementById('lineChart'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'Logs', data: [], borderColor: themeColors.blue, backgroundColor: themeColors.blue + '22', fill: true, tension: 0.3, pointRadius: 2, pointBackgroundColor: themeColors.blue, borderWidth: 1.5 }] },
+                options: { ...noLegendConfig, scales: { x: { display: false }, y: { grid: { color: themeColors.grid }, ticks: { color: themeColors.text, font: { size: 9 }, precision: 0 }, beginAtZero: true } } }
+            });
+
+            barChart = new Chart(document.getElementById('barChart'), {
+                type: 'bar',
+                data: { labels: [], datasets: [{ label: 'Count', data: [], backgroundColor: themeColors.blue, hoverBackgroundColor: '#38bdf8', borderRadius: 4 }] },
+                options: { ...noLegendConfig, scales: { x: { ticks: { color: themeColors.text, font: { size: 9 } } }, y: { display: false, beginAtZero: true } } }
+            });
+        }
+
+        // --- DATA FETCH + RENDER ---
+        async function refresh() {
+            let alerts = [], logs = [];
+            try {
+                const aData = await authFetch(`${API_URL}/alerts`);
+                alerts = aData.alerts || [];
+            } catch (e) {}
+            try {
+                const lData = await authFetch(`${API_URL}/logs?limit=200`);
+                logs = lData.logs || [];
+            } catch (e) {}
+
+            // Stats
+            document.getElementById('stat-logs').innerText = logs.length;
+            document.getElementById('stat-alerts').innerText = alerts.length;
+            document.getElementById('stat-ips').innerText = new Set(alerts.map(a => a.source_ip)).size;
+
+            const webEvents = logs.filter(l => l.log_type === 'web_login');
+            const successCount = webEvents.filter(l => l.event === 'login_success').length;
+            const failCount = webEvents.filter(l => l.event === 'login_failed').length;
+            const total = successCount + failCount;
+            document.getElementById('stat-success-rate').innerText = total > 0 ? Math.round((successCount / total) * 100) + '%' : '--%';
+
+            // Login donut
+            loginChart.data.datasets[0].data = [successCount, failCount];
+            loginChart.update();
+
+            // Log activity line (bucket by minute) - almost always has data, unlike alert rate
+            const buckets = {};
+            logs.forEach(l => {
+                const t = l.timestamp ? toIST(l.timestamp).slice(0, 5) : '??:??';
+                buckets[t] = (buckets[t] || 0) + 1;
+            });
+            const times = Object.keys(buckets).sort();
+            lineChart.data.labels = times;
+            lineChart.data.datasets[0].data = times.map(t => buckets[t]);
+            lineChart.update();
+
+            // Attack vectors bar (by alert_type)
+            const typeCounts = {};
+            alerts.forEach(a => { typeCounts[a.alert_type] = (typeCounts[a.alert_type] || 0) + 1; });
+            barChart.data.labels = Object.keys(typeCounts);
+            barChart.data.datasets[0].data = Object.values(typeCounts);
+            barChart.update();
+
+            // Logs table
+            const logBody = document.getElementById('log-table-body');
+            logBody.innerHTML = logs.slice(0, 100).map(l => `
+                <tr>
+                    <td class="text-slate-500">${toIST(l.timestamp)}</td>
+                    <td class="text-sky-500">${l.log_type || '-'}</td>
+                    <td class="text-slate-200">${l.source_ip || '-'}</td>
+                    <td class="text-slate-400">${escapeHtml((l.message || l.event || '').toString().slice(0,80))}</td>
+                </tr>`).join('');
+
+            // Threats table - grouped by IP, showing only the latest alert per IP
+            // (backend still stores every alert; this is display-only grouping)
+            const latestPerIp = {};
+            alerts.forEach(a => {
+                const existing = latestPerIp[a.source_ip];
+                if (!existing || new Date(a.timestamp) > new Date(existing.timestamp)) {
+                    latestPerIp[a.source_ip] = a;
+                }
+            });
+            const groupedThreats = Object.values(latestPerIp).sort((x, y) => new Date(y.timestamp) - new Date(x.timestamp));
+
+            document.getElementById('threat-count-badge').innerText = `${groupedThreats.length} ACTIVE (from ${alerts.length} total events)`;
+            const threatBody = document.getElementById('threat-list');
+            threatBody.innerHTML = groupedThreats.slice(0, 50).map(a => `
+                <tr>
+                    <td class="mono font-bold text-sky-400">${a.source_ip}</td>
+                    <td><span class="px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/30 text-[10px] font-bold">${a.severity}</span></td>
+                    <td class="text-slate-300">${a.alert_type}</td>
+                    <td class="text-slate-500 mono">${a.mitre_id || 'N/A'}</td>
+                    <td class="text-slate-500">${toIST(a.timestamp)}</td>
+                    <td>
+                        <button onclick="openModal('${a.source_ip}')" class="text-[9px] font-bold uppercase tracking-tighter bg-slate-800 px-3 py-1 border border-slate-700 hover:bg-rose-600 hover:border-rose-500 transition-all">Analyze / Mitigate</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        function toIST(ts) {
+            if (!ts) return '-';
+            const d = new Date(ts.endsWith('Z') ? ts : ts + 'Z');
+            return d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        // --- MODAL ACTIONS (decorative only, no backend call) ---
+        function openModal(ip) {
+            document.getElementById('target-ip-display').innerText = ip;
+            document.getElementById('modal').style.display = 'flex';
+        }
+        function closeModal() { document.getElementById('modal').style.display = 'none'; }
+        function takeAction(act) {
+            alert("PLACEHOLDER: " + act + " — not yet wired to a real action (planned post-midterm).");
+            closeModal();
+        }
+
+        initCharts();
+        refresh();
+        setInterval(refresh, 3000);
+    </script>
+</body>
+</html>

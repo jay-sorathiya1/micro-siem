@@ -1,0 +1,122 @@
+version: "3.8"
+
+services:
+
+  # ---------------------------------------------------------
+  # OpenSearch: stores and indexes logs + alerts
+  # Ready-made official image, no Dockerfile needed
+  # ---------------------------------------------------------
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    container_name: opensearch
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true      # simplifies local dev; do NOT do this in production
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"   # REST API — this is what FastAPI/Vector talk to
+      - "9600:9600"   # performance analyzer, not essential but harmless
+    networks:
+      - siem-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------
+  # OpenSearch Dashboards: optional built-in UI for raw exploration
+  # Handy for sanity-checking data before it hits the custom dashboards
+  # ---------------------------------------------------------
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:latest
+    container_name: opensearch-dashboards
+    environment:
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    ports:
+      - "5601:5601"
+    depends_on:
+      - opensearch
+    networks:
+      - siem-net
+
+  # ---------------------------------------------------------
+  # Vector: reads auth.log from the HOST machine, pushes to OpenSearch
+  # Ready-made official image, config is mounted in via volume
+  # ---------------------------------------------------------
+  vector:
+    image: timberio/vector:latest-alpine
+    container_name: vector
+    volumes:
+      - ./vector/vector.toml:/etc/vector/vector.toml:ro
+      - /var/log/auth.log:/var/log/auth.log:ro
+      - webapp-logs:/var/log/webapp:ro
+      - nginx-logs:/var/log/nginx:ro
+    depends_on:
+      - opensearch
+    networks:
+      - siem-net
+    command: ["--config", "/etc/vector/vector.toml"]
+
+  # ---------------------------------------------------------
+  # FastAPI: your detection engine + API layer
+  # Custom Dockerfile — this is YOUR code
+  # ---------------------------------------------------------
+  api:
+    build: ./src/api
+    container_name: fastapi-app
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+    volumes:
+      - webapp-logs:/var/log/webapp
+    depends_on:
+      - opensearch
+    networks:
+      - siem-net
+
+  # ---------------------------------------------------------
+  # Nginx: serves the crazy login page, proxies /api/ to FastAPI
+  # Ready-made official image, config + page mounted via volume
+  # ---------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-loginpage
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/html:/usr/share/nginx/html:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - api
+    networks:
+      - siem-net
+
+  # ---------------------------------------------------------
+  # React Console: extra dashboard, terminal-style UI
+  # Plain HTML+CDN React, nginx just serves the static file
+  # ---------------------------------------------------------
+  react-dashboard:
+    image: nginx:alpine
+    container_name: react-console
+    ports:
+      - "8090:80"
+    volumes:
+      - ./react-dashboard:/usr/share/nginx/html:ro
+      - ./react-dashboard/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+    networks:
+      - siem-net
+
+networks:
+  siem-net:
+    driver: bridge
+
+volumes:
+  webapp-logs:
+  nginx-logs:

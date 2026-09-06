@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Micro-SIEM // Sign In</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #020617; color: #f1f5f9; font-family: 'Inter', sans-serif;
+    height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .card {
+    width: 340px; background: #0f172a; border: 1px solid #1e293b;
+    border-radius: 10px; padding: 32px;
+  }
+  .logo { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 8px #38bdf8; }
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.5px; }
+  label { display: block; font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 16px; }
+  input {
+    width: 100%; padding: 10px 12px; background: #020617; border: 1px solid #1e293b;
+    border-radius: 6px; color: #f1f5f9; font-family: 'JetBrains Mono', monospace; font-size: 13px; outline: none;
+  }
+  input:focus { border-color: #38bdf8; }
+  button {
+    width: 100%; margin-top: 22px; padding: 11px; background: #0ea5e9; border: none;
+    border-radius: 6px; color: #020617; font-weight: 700; font-size: 12px; letter-spacing: 1px;
+    text-transform: uppercase; cursor: pointer;
+  }
+  button:hover { background: #38bdf8; }
+  #error { margin-top: 12px; font-size: 11px; color: #f43f5e; min-height: 14px; }
+  .foot { margin-top: 18px; font-size: 9px; color: #475569; text-align: center; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo"><div class="dot"></div><h1>MICRO-SIEM ACCESS</h1></div>
+
+    <form id="loginForm">
+      <label>Username</label>
+      <input type="text" id="username" autocomplete="off" required>
+      <label>Password</label>
+      <input type="password" id="password" autocomplete="off" required>
+      <button type="submit">Sign In</button>
+    </form>
+    <div id="error"></div>
+    <div class="foot">Session-based access &mdash; admin / viewer roles</div>
+  </div>
+
+  <script>
+    const API_URL = window.MICRO_SIEM_API_URL || `http://${window.location.hostname}:8000`;
+    const form = document.getElementById("loginForm");
+    const errorEl = document.getElementById("error");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorEl.textContent = "";
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+
+      try {
+        const res = await fetch(`${API_URL}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          errorEl.textContent = data.detail || "Login failed";
+          return;
+        }
+        const data = await res.json();
+        sessionStorage.setItem("siem_token", data.token);
+        sessionStorage.setItem("siem_role", data.role);
+        window.location.href = data.role === "admin" ? "admin.html" : "viewer.html";
+      } catch (err) {
+        errorEl.textContent = "Could not reach the server";
+      }
+    });
+  </script>
+</body>
+</html>

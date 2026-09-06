@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecurePortal // Authentication Required</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Courier New', monospace;
+    background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #0f0c29);
+    background-size: 400% 400%;
+    animation: gradientShift 12s ease infinite;
+    overflow-x: hidden;
+    overflow-y: auto;
+    position: relative;
+    padding: 16px;
+  }
+
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  /* Matrix-style falling glow particles */
+  .particle {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: #00ffe1;
+    border-radius: 50%;
+    box-shadow: 0 0 8px 2px #00ffe1;
+    animation: floatUp linear infinite;
+    opacity: 0.7;
+  }
+
+  @keyframes floatUp {
+    0% { transform: translateY(100vh) translateX(0); opacity: 0; }
+    10% { opacity: 0.8; }
+    100% { transform: translateY(-10vh) translateX(20px); opacity: 0; }
+  }
+
+  .login-box {
+    position: relative;
+    width: 380px;
+    max-width: 90vw;
+    padding: 45px 40px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    backdrop-filter: blur(18px);
+    border: 1px solid rgba(0, 255, 225, 0.25);
+    box-shadow: 0 0 40px rgba(0, 255, 225, 0.15), 0 0 80px rgba(120, 0, 255, 0.1);
+    z-index: 10;
+  }
+
+  @media (max-width: 480px) {
+    .login-box { padding: 32px 22px; border-radius: 12px; }
+    h1 { font-size: 16px; letter-spacing: 2px; }
+    .lock-icon { font-size: 34px; }
+    input { font-size: 16px; } /* prevents iOS auto-zoom on focus */
+    button { font-size: 12px; padding: 12px; }
+  }
+
+  .lock-icon {
+    text-align: center;
+    font-size: 42px;
+    margin-bottom: 10px;
+    filter: drop-shadow(0 0 10px #00ffe1);
+  }
+
+  h1 {
+    text-align: center;
+    color: #00ffe1;
+    font-size: 20px;
+    letter-spacing: 3px;
+    text-shadow: 0 0 12px #00ffe1;
+    margin-bottom: 6px;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: #8888aa;
+    font-size: 11px;
+    letter-spacing: 1px;
+    margin-bottom: 30px;
+  }
+
+  .field {
+    margin-bottom: 22px;
+  }
+
+  label {
+    display: block;
+    color: #00ffe1;
+    font-size: 11px;
+    letter-spacing: 2px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+
+  input {
+    width: 100%;
+    padding: 12px 14px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(0, 255, 225, 0.3);
+    border-radius: 8px;
+    color: #e0f7ff;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    outline: none;
+    transition: 0.3s;
+  }
+
+  input:focus {
+    border-color: #00ffe1;
+    box-shadow: 0 0 12px rgba(0, 255, 225, 0.4);
+  }
+
+  button {
+    width: 100%;
+    padding: 13px;
+    margin-top: 10px;
+    background: linear-gradient(90deg, #00ffe1, #7000ff);
+    border: none;
+    border-radius: 8px;
+    color: #0a0a1a;
+    font-weight: bold;
+    letter-spacing: 2px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: 0.3s;
+    text-transform: uppercase;
+  }
+
+  button:hover {
+    box-shadow: 0 0 20px rgba(0, 255, 225, 0.6);
+    transform: translateY(-2px);
+  }
+
+  #status {
+    margin-top: 18px;
+    text-align: center;
+    font-size: 12px;
+    letter-spacing: 1px;
+    min-height: 18px;
+  }
+
+  .fail { color: #ff3860; text-shadow: 0 0 8px #ff3860; }
+  .success { color: #00ffb3; text-shadow: 0 0 8px #00ffb3; }
+
+  .footer-note {
+    margin-top: 25px;
+    text-align: center;
+    font-size: 9px;
+    color: #555577;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+  <div class="login-box">
+    <div class="lock-icon">🔒</div>
+    <h1>SECURE PORTAL</h1>
+    <div class="subtitle">// AUTHORIZED PERSONNEL ONLY</div>
+
+    <form id="loginForm">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="username" autocomplete="off" required>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="password" autocomplete="off" required>
+      </div>
+      <button type="submit">Authenticate</button>
+    </form>
+
+    <div id="status"></div>
+    <div class="footer-note">Micro-SIEM Demo Login &mdash; All attempts are logged<br>Try: admin/1234, test/1111, guest/0000</div>
+  </div>
+
+  <script>
+    // Background floating particles, purely visual
+    const body = document.body;
+    for (let i = 0; i < 40; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.style.left = Math.random() * 100 + 'vw';
+      p.style.animationDuration = (4 + Math.random() * 6) + 's';
+      p.style.animationDelay = (Math.random() * 5) + 's';
+      body.appendChild(p);
+    }
+
+    const form = document.getElementById('loginForm');
+    const status = document.getElementById('status');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      status.textContent = 'Authenticating...';
+      status.className = '';
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          status.textContent = '✔ ACCESS GRANTED — redirecting...';
+          status.className = 'success';
+          setTimeout(() => { window.location.href = 'search.html'; }, 900);
+        } else {
+          status.textContent = '✖ ACCESS DENIED - ' + (data.reason || 'invalid credentials');
+          status.className = 'fail';
+        }
+      } catch (err) {
+        status.textContent = '⚠ Connection error';
+        status.className = 'fail';
+      }
+    });
+  </script>
+
+</body>
+</html>

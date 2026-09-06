@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Micro-SIEM // Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh;
+    font-family: 'Inter', sans-serif;
+    background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #0f0c29);
+    background-size: 400% 400%;
+    animation: gradientShift 14s ease infinite;
+    color: #e0f7ff;
+  }
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 18px 40px; background: rgba(0,0,0,0.25); backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(0,255,225,0.15);
+  }
+  .brand { color: #00ffe1; font-weight: 700; letter-spacing: 1px; font-size: 15px; }
+  .signin-btn {
+    padding: 9px 20px; background: linear-gradient(90deg, #00ffe1, #7000ff);
+    border-radius: 6px; color: #0a0a1a; font-weight: 700; text-decoration: none;
+    font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase;
+  }
+
+  .hero { text-align: center; padding: 70px 20px 50px; max-width: 720px; margin: 0 auto; }
+  .hero h1 {
+    font-size: 30px; color: #fff; margin-bottom: 14px; letter-spacing: 0.5px;
+  }
+  .hero .accent { color: #00ffe1; text-shadow: 0 0 14px rgba(0,255,225,0.5); }
+  .hero p { color: #a8b8c8; font-size: 14px; line-height: 1.7; margin-bottom: 26px; }
+
+  .features {
+    max-width: 960px; margin: 0 auto; padding: 20px 20px 60px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+  }
+  .card {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(0,255,225,0.15);
+    border-radius: 12px; padding: 22px; backdrop-filter: blur(10px);
+  }
+  .card .icon { font-size: 22px; margin-bottom: 10px; }
+  .card h3 { font-size: 14px; color: #00ffe1; margin-bottom: 8px; letter-spacing: 0.5px; }
+  .card p { font-size: 12.5px; color: #93a4b5; line-height: 1.6; }
+
+  .stack {
+    max-width: 960px; margin: 0 auto 60px; padding: 0 20px;
+  }
+  .stack h2 { font-size: 15px; color: #fff; margin-bottom: 14px; letter-spacing: 0.5px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag {
+    font-size: 11px; padding: 6px 12px; background: rgba(0,255,225,0.08);
+    border: 1px solid rgba(0,255,225,0.25); border-radius: 20px; color: #9be;
+    font-family: 'Courier Prime', monospace;
+  }
+
+  footer {
+    text-align: center; padding: 24px; font-size: 10.5px; color: #556;
+    border-top: 1px solid rgba(255,255,255,0.05);
+  }
+
+  @media (max-width: 720px) {
+    .features { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 22px; }
+    nav { padding: 14px 18px; }
+  }
+</style>
+</head>
+<body>
+
+  <nav>
+    <div class="brand">&gt;_ MICRO-SIEM</div>
+    <a class="signin-btn" href="login.html">Sign In</a>
+  </nav>
+
+  <div class="hero">
+    <h1>A lightweight <span class="accent">SIEM</span> built from scratch</h1>
+    <p>
+      Micro-SIEM ingests real Linux authentication logs, web login attempts, and
+      Nginx access traffic — detects brute-force attacks, credential compromise
+      patterns, and XSS injection attempts — and shows it all live on a
+      role-based dashboard. Built as a final-year cybersecurity project.
+    </p>
+    <a class="signin-btn" href="login.html" style="padding: 12px 26px; font-size: 13px;">Enter Demo Portal</a>
+  </div>
+
+  <div class="features">
+    <div class="card">
+      <div class="icon">📡</div>
+      <h3>Multi-Source Ingestion</h3>
+      <p>Reads real SSH auth logs, custom web login events, and Nginx access logs — three independent, live data sources feeding one pipeline.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🧠</div>
+      <h3>Real Detection Logic</h3>
+      <p>Brute-force threshold rules, a true cross-event correlation rule (fail-then-success), and signature-based XSS detection — not a black box.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🗺️</div>
+      <h3>MITRE ATT&amp;CK Mapped</h3>
+      <p>Alerts are tagged with real technique IDs (T1110 Brute Force, T1078 Valid Accounts) where they genuinely apply — no forced mappings.</p>
+    </div>
+    <div class="card">
+      <div class="icon">📊</div>
+      <h3>Role-Based Dashboards</h3>
+      <p>Separate Admin and Viewer consoles, session-token authenticated — full response actions for admins, read-only visibility for viewers.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔓</div>
+      <h3>Intentional Attack Surface</h3>
+      <p>This portal itself is the test target — a deliberately vulnerable login and search page for live, safe demonstration of real attacks.</p>
+    </div>
+    <div class="card">
+      <div class="icon">⚙️</div>
+      <h3>Fully Containerized</h3>
+      <p>Every component — ingestion, storage, API, dashboards — runs in Docker, orchestrated with a single Compose file.</p>
+    </div>
+  </div>
+
+  <div class="stack">
+    <h2>Built with</h2>
+    <div class="tags">
+      <span class="tag">Docker Compose</span>
+      <span class="tag">Vector</span>
+      <span class="tag">OpenSearch</span>
+      <span class="tag">FastAPI</span>
+      <span class="tag">Python</span>
+      <span class="tag">Nginx</span>
+      <span class="tag">Chart.js</span>
+      <span class="tag">MITRE ATT&amp;CK</span>
+    </div>
+  </div>
+
+  <footer>Micro-SIEM &mdash; Academic Project &mdash; Demo Environment Only</footer>
+
+</body>
+</html>
