@@ -52,7 +52,7 @@
   <div class="container">
     <div class="header">
       <h1>&gt;_ SEARCH PORTAL</h1>
-      <a class="logout" href="index.html">LOGOUT</a>
+      <a class="logout" href="index.html" onclick="sessionStorage.removeItem('demo_token')">LOGOUT</a>
     </div>
     <div class="search-box">
       <form id="searchForm">
@@ -65,6 +65,24 @@
   </div>
 
   <script>
+    // Session guard: verify on load that we're logged in AND the account
+    // hasn't been blocked since. Checked once per page load, not live-polled.
+    const demoToken = sessionStorage.getItem("demo_token");
+    if (!demoToken) {
+      window.location.href = "login.html";
+    } else {
+      fetch("/api/session-check?token=" + encodeURIComponent(demoToken))
+        .then(res => res.json())
+        .then(data => {
+          if (!data.valid) {
+            sessionStorage.removeItem("demo_token");
+            alert("Session ended: " + (data.reason || "please log in again"));
+            window.location.href = "login.html";
+          }
+        })
+        .catch(() => { /* if the API is briefly unreachable, don't kick the user out */ });
+    }
+
     // Reflect the query straight from the URL, if present (GET-based search)
     const params = new URLSearchParams(window.location.search);
     const initialQuery = params.get("q");

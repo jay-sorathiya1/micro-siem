@@ -73,6 +73,11 @@ DEMO_ACCOUNTS = {
 
 WEBAPP_LOG_PATH = "/var/log/webapp/login.log"
 
+# Demo login page sessions - separate from dashboard admin/viewer sessions.
+# Lets search.html verify on load whether the account got blocked
+# AFTER the user already logged in.
+demo_sessions = {}  # token -> {"username": str, "created": datetime}
+
 # --- Dashboard admin/viewer session auth ---
 DASHBOARD_USERS = {
     "admin": {"password": "2632", "role": "admin"},
@@ -170,7 +175,9 @@ def web_login(payload: LoginRequest, request: Request):
             "source_ip": source_ip,
             "result": "success",
         })
-        return {"success": True}
+        demo_token = secrets.token_hex(16)
+        demo_sessions[demo_token] = {"username": username, "created": now}
+        return {"success": True, "token": demo_token}
 
     write_webapp_log({
         "timestamp": now.isoformat(),
@@ -181,6 +188,35 @@ def web_login(payload: LoginRequest, request: Request):
         "result": "failed",
     })
     return {"success": False, "reason": "invalid credentials"}
+
+
+@app.get("/session-check")
+def session_check(token: str):
+    """
+    Public endpoint - search.html calls this on load to verify:
+    1. The demo session token is real
+    2. The account behind it hasn't been blocked since login
+
+    If blocked, search.html clears its stored token and redirects
+    back to login.html - this is checked on page load only, not
+    live-polled, so an already-open tab won't be kicked out mid-session,
+    only on next load/navigation.
+    """
+    session = demo_sessions.get(token)
+    if not session:
+        return {"valid": False, "reason": "invalid session"}
+
+    username = session["username"]
+    blocked_check = client.search(
+        index=BLOCKED_INDEX,
+        body={"query": {"bool": {"must": [{"term": {"username.keyword": username}}, {"term": {"type.keyword": "account"}}]}}},
+        ignore=[404],
+    )
+    if blocked_check.get("hits", {}).get("total", {}).get("value", 0) > 0:
+        demo_sessions.pop(token, None)
+        return {"valid": False, "reason": "account has been blocked"}
+
+    return {"valid": True, "username": username}
 
 
 @app.post("/auth/login")

@@ -220,6 +220,7 @@
         if (data.success) {
           status.textContent = '✔ ACCESS GRANTED — redirecting...';
           status.className = 'success';
+          sessionStorage.setItem('demo_token', data.token);
           setTimeout(() => { window.location.href = 'search.html'; }, 900);
         } else {
           status.textContent = '✖ ACCESS DENIED - ' + (data.reason || 'invalid credentials');
