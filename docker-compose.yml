@@ -62,31 +62,47 @@ services:
   # ---------------------------------------------------------
   # FastAPI: your detection engine + API layer
   # Custom Dockerfile — this is YOUR code
+  #
+  # NETWORK MODE: host, with NET_ADMIN capability.
+  # Real IP-blocking runs `iptables` commands that must affect the HOST's
+  # firewall - SSH runs on the host machine, not inside a container, so
+  # this container needs to share the host's network stack directly to
+  # actually block traffic reaching it. Side effect: "ports" below is
+  # ignored in host mode (the container just uses the host's network),
+  # and it reaches OpenSearch via "localhost:9200" instead of the
+  # Docker DNS name "opensearch:9200".
   # ---------------------------------------------------------
   api:
     build: ./src/api
     container_name: fastapi-app
-    ports:
-      - "8000:8000"
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
     environment:
-      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_HOST=localhost
       - OPENSEARCH_PORT=9200
     volumes:
       - webapp-logs:/var/log/webapp
     depends_on:
       - opensearch
-    networks:
-      - siem-net
 
   # ---------------------------------------------------------
   # Nginx: serves the crazy login page, proxies /api/ to FastAPI
   # Ready-made official image, config + page mounted via volume
+  #
+  # Since "api" now runs in network_mode: host (see above), it's no
+  # longer reachable via the Docker DNS name "api" on the bridge
+  # network. extra_hosts below maps host.docker.internal to the actual
+  # host machine so this container can still reach FastAPI at
+  # host.docker.internal:8000 (see nginx/default.conf).
   # ---------------------------------------------------------
   nginx:
     image: nginx:alpine
     container_name: nginx-loginpage
     ports:
       - "8080:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./nginx/html:/usr/share/nginx/html:ro
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro

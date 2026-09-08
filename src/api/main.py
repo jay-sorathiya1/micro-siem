@@ -16,6 +16,7 @@ Logic overview (this is the part that matters for your viva):
 import os
 import json
 import secrets
+import subprocess
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -47,6 +48,7 @@ client = OpenSearch(
 
 LOGS_INDEX = "logs-index"
 ALERTS_INDEX = "alerts-index"
+BLOCKED_INDEX = "blocked-index"
 
 FAILED_LOGIN_THRESHOLD = 5      # how many failed attempts...
 TIME_WINDOW_MINUTES = 2         # ...within this many minutes = alert
@@ -55,6 +57,10 @@ TIME_WINDOW_MINUTES = 2         # ...within this many minutes = alert
 # to fire again - prevents spamming a new alert doc every 3-second
 # dashboard refresh while an attack is still ongoing.
 ALERT_DEDUPE_MINUTES = 5
+
+# Safety net: these can NEVER be blocked, no matter what, so a false
+# positive or accidental click can't lock you out of your own machine.
+NEVER_BLOCK_IPS = {"127.0.0.1", "::1", "localhost", "unknown", "0.0.0.0"}
 
 # --- Demo web login page config (attack target, stays intentionally weak) ---
 # Demo web login accounts - 3 accounts, numeric-only passwords (easy to type
@@ -100,6 +106,13 @@ def require_session(authorization: str = Header(None)):
     return session
 
 
+def require_admin(session: dict = Depends(require_session)):
+    """Block/unblock actions are admin-only - viewers can't act, only observe."""
+    if session["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required for this action")
+    return session
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -130,6 +143,23 @@ def web_login(payload: LoginRequest, request: Request):
     source_ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
     username = payload.username
     now = datetime.utcnow()
+
+    # Check if this account has been manually blocked by an admin
+    blocked_check = client.search(
+        index=BLOCKED_INDEX,
+        body={"query": {"bool": {"must": [{"term": {"username.keyword": username}}, {"term": {"type.keyword": "account"}}]}}},
+        ignore=[404],
+    )
+    if blocked_check.get("hits", {}).get("total", {}).get("value", 0) > 0:
+        write_webapp_log({
+            "timestamp": now.isoformat(),
+            "log_type": "web_login",
+            "event": "login_blocked",
+            "username": username,
+            "source_ip": source_ip,
+            "result": "blocked",
+        })
+        return {"success": False, "reason": "this account has been blocked by an administrator"}
 
     if DEMO_ACCOUNTS.get(username) == payload.password:
         write_webapp_log({
@@ -422,3 +452,114 @@ def get_alerts(limit: int = 50, session: dict = Depends(require_session)):
     result = client.search(index=ALERTS_INDEX, body=query, ignore=[404])
     hits = [hit["_source"] for hit in result.get("hits", {}).get("hits", [])]
     return {"count": len(hits), "alerts": hits}
+
+
+@app.post("/block/{ip}")
+def block_ip(ip: str, session: dict = Depends(require_admin)):
+    """
+    Block an IP at the host firewall using iptables.
+
+    Requires the api container to run with network_mode: host and
+    NET_ADMIN capability (see docker-compose.yml) - this is what lets
+    a command run inside the container actually affect the HOST's
+    firewall, since SSH runs on the host, not in a container.
+
+    Safety: NEVER_BLOCK_IPS can never be blocked, no matter what -
+    protects against ever locking yourself out of your own machine.
+    """
+    if ip in NEVER_BLOCK_IPS:
+        raise HTTPException(status_code=400, detail=f"Refusing to block '{ip}' - protected address")
+
+    existing = client.search(
+        index=BLOCKED_INDEX,
+        body={"query": {"term": {"ip.keyword": ip}}},
+        ignore=[404],
+    )
+    if existing.get("hits", {}).get("total", {}).get("value", 0) > 0:
+        return {"status": "already_blocked", "ip": ip}
+
+    try:
+        subprocess.run(
+            ["iptables", "-I", "INPUT", "-s", ip, "-j", "DROP"],
+            check=True, capture_output=True, text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"iptables command failed: {e.stderr}")
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="iptables not found in container")
+
+    record = {
+        "type": "ip",
+        "ip": ip,
+        "blocked_at": datetime.utcnow().isoformat(),
+        "blocked_by": "admin",
+    }
+    client.index(index=BLOCKED_INDEX, body=record)
+    return {"status": "blocked", "ip": ip}
+
+
+@app.post("/unblock/{ip}")
+def unblock_ip(ip: str, session: dict = Depends(require_admin)):
+    """Remove the iptables DROP rule for a previously blocked IP."""
+    try:
+        subprocess.run(
+            ["iptables", "-D", "INPUT", "-s", ip, "-j", "DROP"],
+            check=True, capture_output=True, text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"iptables command failed (rule may not exist): {e.stderr}")
+
+    client.delete_by_query(
+        index=BLOCKED_INDEX,
+        body={"query": {"bool": {"must": [{"term": {"ip.keyword": ip}}, {"term": {"type.keyword": "ip"}}]}}},
+        ignore=[404],
+    )
+    return {"status": "unblocked", "ip": ip}
+
+
+@app.post("/block-account/{username}")
+def block_account(username: str, session: dict = Depends(require_admin)):
+    """
+    Block a demo account manually (admin-triggered, not automatic lockout).
+    This only affects the DEMO_ACCOUNTS login target - purely app-level,
+    no system risk at all.
+    """
+    existing = client.search(
+        index=BLOCKED_INDEX,
+        body={"query": {"bool": {"must": [{"term": {"username.keyword": username}}, {"term": {"type.keyword": "account"}}]}}},
+        ignore=[404],
+    )
+    if existing.get("hits", {}).get("total", {}).get("value", 0) > 0:
+        return {"status": "already_blocked", "username": username}
+
+    record = {
+        "type": "account",
+        "username": username,
+        "blocked_at": datetime.utcnow().isoformat(),
+        "blocked_by": "admin",
+    }
+    client.index(index=BLOCKED_INDEX, body=record)
+    return {"status": "blocked", "username": username}
+
+
+@app.post("/unblock-account/{username}")
+def unblock_account(username: str, session: dict = Depends(require_admin)):
+    """Unblock a previously blocked demo account."""
+    client.delete_by_query(
+        index=BLOCKED_INDEX,
+        body={"query": {"bool": {"must": [{"term": {"username.keyword": username}}, {"term": {"type.keyword": "account"}}]}}},
+        ignore=[404],
+    )
+    return {"status": "unblocked", "username": username}
+
+
+@app.get("/blocked")
+def get_blocked(session: dict = Depends(require_session)):
+    """List currently blocked IPs and accounts. Read-only, viewer can see this too."""
+    result = client.search(
+        index=BLOCKED_INDEX,
+        body={"size": 100, "sort": [{"blocked_at": {"order": "desc"}}], "query": {"match_all": {}}},
+        ignore=[404],
+    )
+    hits = [hit["_source"] for hit in result.get("hits", {}).get("hits", [])]
+    return {"count": len(hits), "blocked": hits}
