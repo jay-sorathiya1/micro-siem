@@ -17,6 +17,7 @@ import os
 import json
 import secrets
 import subprocess
+import ipaddress
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -490,10 +491,23 @@ def get_alerts(limit: int = 50, session: dict = Depends(require_session)):
     return {"count": len(hits), "alerts": hits}
 
 
+def _firewall_tool_for(ip: str) -> str:
+    """
+    iptables only understands IPv4, ip6tables only understands IPv6 -
+    they are separate tools, not one universal command. This picks the
+    right one based on the actual address format.
+    """
+    try:
+        return "ip6tables" if ipaddress.ip_address(ip).version == 6 else "iptables"
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"'{ip}' is not a valid IP address")
+
+
 @app.post("/block/{ip}")
 def block_ip(ip: str, session: dict = Depends(require_admin)):
     """
-    Block an IP at the host firewall using iptables.
+    Block an IP at the host firewall using iptables (IPv4) or
+    ip6tables (IPv6) - picked automatically based on address format.
 
     Requires the api container to run with network_mode: host and
     NET_ADMIN capability (see docker-compose.yml) - this is what lets
@@ -506,6 +520,8 @@ def block_ip(ip: str, session: dict = Depends(require_admin)):
     if ip in NEVER_BLOCK_IPS:
         raise HTTPException(status_code=400, detail=f"Refusing to block '{ip}' - protected address")
 
+    tool = _firewall_tool_for(ip)
+
     existing = client.search(
         index=BLOCKED_INDEX,
         body={"query": {"term": {"ip.keyword": ip}}},
@@ -516,13 +532,13 @@ def block_ip(ip: str, session: dict = Depends(require_admin)):
 
     try:
         subprocess.run(
-            ["iptables", "-I", "INPUT", "-s", ip, "-j", "DROP"],
+            [tool, "-I", "INPUT", "-s", ip, "-j", "DROP"],
             check=True, capture_output=True, text=True,
         )
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"iptables command failed: {e.stderr}")
+        raise HTTPException(status_code=500, detail=f"{tool} command failed: {e.stderr}")
     except FileNotFoundError:
-        raise HTTPException(status_code=500, detail="iptables not found in container")
+        raise HTTPException(status_code=500, detail=f"{tool} not found in container")
 
     record = {
         "type": "ip",
@@ -536,14 +552,15 @@ def block_ip(ip: str, session: dict = Depends(require_admin)):
 
 @app.post("/unblock/{ip}")
 def unblock_ip(ip: str, session: dict = Depends(require_admin)):
-    """Remove the iptables DROP rule for a previously blocked IP."""
+    """Remove the DROP rule for a previously blocked IP (IPv4 or IPv6)."""
+    tool = _firewall_tool_for(ip)
     try:
         subprocess.run(
-            ["iptables", "-D", "INPUT", "-s", ip, "-j", "DROP"],
+            [tool, "-D", "INPUT", "-s", ip, "-j", "DROP"],
             check=True, capture_output=True, text=True,
         )
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"iptables command failed (rule may not exist): {e.stderr}")
+        raise HTTPException(status_code=500, detail=f"{tool} command failed (rule may not exist): {e.stderr}")
 
     client.delete_by_query(
         index=BLOCKED_INDEX,

@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
-# iptables needed for real IP-blocking (/block endpoint)
+# iptables package includes both `iptables` (IPv4) and `ip6tables` (IPv6)
+# binaries on Debian - needed for real IP-blocking (/block endpoint)
 RUN apt-get update && apt-get install -y iptables && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
