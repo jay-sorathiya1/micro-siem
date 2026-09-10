@@ -200,9 +200,16 @@
 
     const form = document.getElementById('loginForm');
     const status = document.getElementById('status');
+    const submitBtn = form.querySelector('button[type="submit"]');
+    let isSubmitting = false;
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (isSubmitting) return;   // ignore a second tap/click while one is in flight
+      isSubmitting = true;
+      submitBtn.disabled = true;
+      submitBtn.style.opacity = '0.6';
+
       const username = document.getElementById('username').value;
       const password = document.getElementById('password').value;
 
@@ -222,6 +229,7 @@
           status.className = 'success';
           sessionStorage.setItem('demo_token', data.token);
           setTimeout(() => { window.location.href = 'search.html'; }, 900);
+          return; // navigating away - no need to re-enable the button
         } else {
           status.textContent = '✖ ACCESS DENIED - ' + (data.reason || 'invalid credentials');
           status.className = 'fail';
@@ -230,6 +238,10 @@
         status.textContent = '⚠ Connection error';
         status.className = 'fail';
       }
+
+      isSubmitting = false;
+      submitBtn.disabled = false;
+      submitBtn.style.opacity = '1';
     });
   </script>
 

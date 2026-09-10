@@ -55,14 +55,13 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 | Chart.js "undefined" legend | No dataset label + legend shown on single-series chart | Added label, hid legend |
 | Donut chart overflowing panel | Flexbox `min-height: auto` default | `min-height: 0` down the flex chain + bounded canvas wrapper |
 | IP block failed on IPv6 address | `iptables` is IPv4-only, IPv6 needs `ip6tables` | Auto-detect via `ipaddress` module, pick right tool |
-| Duplicate login log entries (~0.6s apart) | Double-tap/click, no submit lock on the button | *(fix drafted, not yet applied — see Pending)* |
+| Duplicate login log entries (~0.6s apart) | Double-tap/click, no submit lock on the button | Added `isSubmitting` guard + disabled button while request in flight |
 
 ---
 
 ## Pending / Next Up
 
 ### High priority
-- [ ] Apply the double-submit guard fix to `login.html` (drafted, confirmed, not yet built)
 - [ ] Password-spraying detection rule — distinct usernames from one IP (MITRE T1110.003)
 - [ ] Formal Detection Playbooks (one write-up per rule)
 - [ ] Incident Verification Reports (proof-of-detection per rule: screenshot, timestamp, resolution)
