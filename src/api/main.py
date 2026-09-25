@@ -63,6 +63,16 @@ ALERT_DEDUPE_MINUTES = 5
 # positive or accidental click can't lock you out of your own machine.
 NEVER_BLOCK_IPS = {"127.0.0.1", "::1", "localhost", "unknown", "0.0.0.0"}
 
+# IP and account blocking are switched off for now (planned for a future
+# version). While False, the block/unblock endpoints refuse every request,
+# so no iptables rule is ever run and no account gets locked.
+BLOCKING_ENABLED = False
+
+
+def _require_blocking_enabled():
+    if not BLOCKING_ENABLED:
+        raise HTTPException(status_code=503, detail="Blocking is disabled - coming in a future version")
+
 # --- Demo web login page config (attack target, stays intentionally weak) ---
 # Demo web login accounts - 3 accounts, numeric-only passwords (easy to type
 # quickly during a live demo). Still demo-only, never do this in a real app.
@@ -517,6 +527,7 @@ def block_ip(ip: str, session: dict = Depends(require_admin)):
     Safety: NEVER_BLOCK_IPS can never be blocked, no matter what -
     protects against ever locking yourself out of your own machine.
     """
+    _require_blocking_enabled()
     if ip in NEVER_BLOCK_IPS:
         raise HTTPException(status_code=400, detail=f"Refusing to block '{ip}' - protected address")
 
@@ -553,6 +564,7 @@ def block_ip(ip: str, session: dict = Depends(require_admin)):
 @app.post("/unblock/{ip}")
 def unblock_ip(ip: str, session: dict = Depends(require_admin)):
     """Remove the DROP rule for a previously blocked IP (IPv4 or IPv6)."""
+    _require_blocking_enabled()
     tool = _firewall_tool_for(ip)
     try:
         subprocess.run(
@@ -577,6 +589,7 @@ def block_account(username: str, session: dict = Depends(require_admin)):
     This only affects the DEMO_ACCOUNTS login target - purely app-level,
     no system risk at all.
     """
+    _require_blocking_enabled()
     existing = client.search(
         index=BLOCKED_INDEX,
         body={"query": {"bool": {"must": [{"term": {"username.keyword": username}}, {"term": {"type.keyword": "account"}}]}}},
@@ -598,6 +611,7 @@ def block_account(username: str, session: dict = Depends(require_admin)):
 @app.post("/unblock-account/{username}")
 def unblock_account(username: str, session: dict = Depends(require_admin)):
     """Unblock a previously blocked demo account."""
+    _require_blocking_enabled()
     client.delete_by_query(
         index=BLOCKED_INDEX,
         body={"query": {"bool": {"must": [{"term": {"username.keyword": username}}, {"term": {"type.keyword": "account"}}]}}},

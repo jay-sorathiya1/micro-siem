@@ -181,6 +181,12 @@
             plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10 }, color: themeColors.text } } }
         };
 
+        // Attack-vector bar colours: XSS + brute force = red, suspicious login = blue
+        function alertColor(type) {
+            if (type.includes('XSS') || type.includes('Brute Force')) return themeColors.rose;
+            return themeColors.blue;
+        }
+
         const loginChart = new Chart(document.getElementById('loginChart'), {
             type: 'doughnut',
             data: { labels: ['Success', 'Failed'], datasets: [{ data: [0, 0], backgroundColor: [themeColors.blue, themeColors.rose], borderWidth: 0 }] },
@@ -231,6 +237,8 @@
             alerts.forEach(a => { typeCounts[a.alert_type] = (typeCounts[a.alert_type] || 0) + 1; });
             barChart.data.labels = Object.keys(typeCounts);
             barChart.data.datasets[0].data = Object.values(typeCounts);
+            barChart.data.datasets[0].backgroundColor = barChart.data.labels.map(alertColor);
+            barChart.data.datasets[0].hoverBackgroundColor = barChart.data.labels.map(alertColor);
             barChart.update();
         }
 
