@@ -23,16 +23,11 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 
 ## Status: Core Features (Done)
 
-- [x] 3 real log sources ingested (SSH auth.log, web login, Nginx access)
-- [x] SSH brute-force detection (T1110)
+- [x] 2 active log sources ingested (web login, Nginx access)
 - [x] Web login brute-force detection (T1110)
 - [x] Correlation rule — fail-then-success (T1078)
 - [x] XSS detection — signature-based (OWASP/CWE-79, honestly not forced into MITRE)
-- [x] Real IP-level blocking (iptables + ip6tables, IPv4/IPv6 both handled)
-- [x] Real account-level blocking (app-level, admin-triggered)
-- [x] Blocked panel with Unblock buttons (admin dashboard)
-- [x] Blocked accounts actually locked out of demo login going forward
-- [x] Blocked-account sessions kicked out on next page load (session-check)
+- [x] Attack Vectors chart colour-coded: XSS + brute force = red, suspicious login = blue (admin + viewer)
 - [x] Admin + Viewer dashboards, real backend session auth (not browser popup)
 - [x] Role-based access (viewer can't call block/unblock — 403 enforced server-side)
 - [x] IST timezone across all dashboard timestamps
@@ -40,6 +35,16 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 - [x] Demo attack-surface site: Home → Login → Search (real XSS target)
 - [x] ngrok tested for remote/mobile-data demo access
 - [x] GitHub repo set up, push workflow working
+
+## Disabled for Now (code kept, planned for a future version)
+
+- **IP-level blocking** (iptables/ip6tables) and **account-level blocking** — switched off via
+  `BLOCKING_ENABLED = False` in `src/api/main.py`. Block/unblock endpoints return 503, so no
+  firewall rule runs and no account gets locked. In the admin dashboard, "Execute IP Level Block",
+  "Block User" and "Unblock" show a "Coming Soon" popup. Blocked panel kept (read-only list).
+  Re-enable: set flag to `True` + restore old button handlers in `admin.html` from git history.
+- **SSH ingestion + SSH brute-force detection (T1110)** — not used on this machine (decision: no
+  SSH). Vector config and detection rule still exist; `auth.log` source just has no data.
 
 ---
 
@@ -135,4 +140,4 @@ Ordered by priority. None of these are fixed; this is the to-fix list.
 
 ---
 
-*Last updated: added Open Bugs from full code review (security, detection, UI, infra) — none fixed yet.*
+*Last updated: blocking disabled behind Coming Soon popup, chart colours added, SSH dropped; project verified running end-to-end on Docker (web login + Nginx pipeline, dashboards, API).*
