@@ -35,6 +35,8 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 - [x] Demo attack-surface site: Home → Login → Search (real XSS target)
 - [x] ngrok tested for remote/mobile-data demo access
 - [x] GitHub repo set up, push workflow working
+- [x] Project report drafted — `docs/Micro-SIEM.docx` (45 pages: 5 front + 40 chapter pages, standard report formatting, built on college format from `PROJECT_FINAL_INDEX.docx`); still needs student name/enrollment/guide filled and 21 image placeholders replaced with diagrams/screenshots
+- [x] Presentation drafted — `docs/Micro-SIEM.pptx` (20 slides, speaker notes on every slide); still needs student name/enrollment/guide filled and 4 screenshot placeholders (slides 13–15) replaced
 
 ## Disabled for Now (code kept, planned for a future version)
 
