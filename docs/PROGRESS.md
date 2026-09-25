@@ -59,6 +59,54 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 
 ---
 
+## Open Bugs (found in full code review — NOT fixed yet)
+
+Ordered by priority. None of these are fixed; this is the to-fix list.
+
+### Security (in the SIEM itself, not the intentional demo holes)
+
+| # | Bug | Where | Root Cause | Suggested Fix |
+|---|---|---|---|---|
+| S1 | Stored XSS in admin dashboard via spoofed IP | `main.py:149`, `nginx/default.conf:24`, `admin.html` threat + log tables | `source_ip` = first entry of client-controlled `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for` appends, doesn't replace). Admin renders `source_ip` unescaped via `innerHTML` and inside `onclick="openModal('...')"`. 5 failed logins with `X-Forwarded-For: <img src=x onerror=...>` → script runs in admin's browser, can read the session token and call `/block`/`/unblock` | Take IP from `X-Real-IP` (set by nginx to `$remote_addr`) and validate with `ipaddress`; escape every rendered field; stop building `onclick` strings from data |
+| S2 | IP spoofing evades/frames detection | same as S1 | Same spoofable header — attacker rotates a fake IP per request so the per-IP threshold never trips, or frames an innocent IP so admin blocks it | Same fix as S1 |
+| S3 | IP block doesn't stop web attackers | `main.py:535` | Rule goes in `INPUT`; Docker-published ports (8080/8090) are routed through `FORWARD`/`DOCKER-USER`, never `INPUT`. Only SSH and direct `:8000` are actually blocked. Local attacks show as Docker gateway IP; ngrok attacks come from the local ngrok agent | Also insert into `DOCKER-USER` chain, or honestly describe blocking as "host-level (SSH + API)" |
+| S4 | Dashboard login brute-forceable | `main.py:83-86`, `/auth/login` | 4-digit hardcoded passwords committed to GitHub, no rate limit, SIEM doesn't log its own login attempts | Rate-limit + log `/auth/login` failures as a log source; move creds to env vars |
+| S5 | OpenSearch exposed with no auth | `docker-compose.yml` ports 9200/5601 | Security plugin disabled and ports published on all interfaces → anyone on the LAN can read/delete/forge logs, alerts, blocklist | Bind to `127.0.0.1:9200:9200` / `127.0.0.1:5601:5601` |
+| S6 | Loopback protection bypassable | `main.py:64, 520` | `NEVER_BLOCK_IPS` is exact string match — `0:0::1`, `127.0.0.2` pass | Use `ipaddress.ip_address(ip).is_loopback` (and protect own LAN IP) |
+| S7 | `escapeHtml()` incomplete | `admin.html` | Doesn't escape `"` / `'`; blocked-list `onclick` uses unescaped username | Escape quotes; use event listeners instead of inline `onclick` |
+
+### Detection correctness
+
+| # | Bug | Where | Root Cause | Suggested Fix |
+|---|---|---|---|---|
+| D1 | Alert spam — ~40 duplicate alerts per attack per open dashboard | `main.py:340-355`, `452-471` | `_already_alerted_recently()` only used by XSS rule; brute-force and correlation rules insert a new alert every `/alerts` call (every 3s per dashboard). Admin UI's group-by-IP hides it, but stat tile + bar chart are inflated | Call dedupe in all rules |
+| D2 | Detection only runs while a dashboard is open | `main.py:482` | Detection is triggered by `GET /alerts` polling. No dashboard open during attack + 2-min window passes = attack never detected. Two dashboards = double runs/races | Run `_run_detection()` in a background loop (FastAPI startup task) |
+| D3 | SSH rule matches wrong lines (incl. successful logins) | `main.py:327` | `match` on "Failed password" is analyzed OR → matches `Accepted password`, sudo "incorrect password", etc. Lines without IP group under `unknown` → bogus alert | Use `match_phrase` |
+| D4 | Dedupe race | `_already_alerted_recently` | OpenSearch ~1s refresh — just-written alert not yet searchable, so duplicates can slip through | `refresh="wait_for"` on alert index, or deterministic doc IDs |
+| D5 | Big attacks under-counted | `main.py:323` | `size: 500` caps events per window | Use a `terms` aggregation on `source_ip` |
+
+### Functional / UI
+
+| # | Bug | Where | Root Cause | Suggested Fix |
+|---|---|---|---|---|
+| F1 | Nginx rows show "Invalid Date", junk chart bucket | `toIST()` in `admin.html` + `viewer.html` | Nginx `$time_iso8601` ends `+00:00`; code appends `Z` → `...+00:00Z` → unparseable | Only append `Z` if no timezone suffix present |
+| F2 | Blocklist drifts from real firewall | `main.py:553-570` | iptables rules don't survive reboot, but `blocked-index` record does. Unblock then fails on `iptables -D` → 500 before index cleanup → stuck entry | Delete index record even if rule missing; re-apply rules on API startup |
+| F3 | `/alerts` + `/logs` 500 on fresh start | `main.py:259, 333, 445` | No `ignore=[404]` before Vector creates `logs-index` | Add `ignore=[404]` |
+| F4 | Unbounded `limit` → 500 | `/logs`, `/alerts` | >10000 exceeds `max_result_window` | Cap `limit` |
+| F5 | `demo_sessions` never expire | `main.py:80` | No TTL/cleanup | Add expiry like dashboard sessions |
+
+### Infra / demo-day risks
+
+- `:latest` images + unversioned `chart.js` CDN — a version jump already broke things once (`_type` bug). Pin versions before the viva.
+- `depends_on` doesn't wait for OpenSearch healthcheck (add `condition: service_healthy`).
+- Dashboards need internet (Tailwind play CDN, Chart.js, Google Fonts) — no internet at venue = broken UI.
+- Dashboards call `http://<host>:8000` directly — likely unreachable through ngrok (untested); the ngrok test probably only covered the demo site.
+- Vector has no persistent data dir → may skip lines after container recreate.
+- README is stale (mentions Streamlit/8501, missing React console on 8090).
+- `.git` owned by root ("dubious ownership" error) — fix with `sudo chown -R $USER .git`.
+
+---
+
 ## Pending / Next Up
 
 ### High priority
@@ -87,4 +135,4 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 
 ---
 
-*Last updated: reflects state after IPv6 firewall fix + double-submit bug diagnosis.*
+*Last updated: added Open Bugs from full code review (security, detection, UI, infra) — none fixed yet.*
