@@ -9,8 +9,7 @@ edit, but anything worth remembering for the report or viva.
 ## Project Flow (high level)
 
 ```
-auth.log ─────┐
-web login.log ─┼──▶ Vector ──▶ OpenSearch ──▶ FastAPI (detection + auth)
+web login.log ───┬──▶ Vector ──▶ OpenSearch ──▶ FastAPI (detection + auth)
 nginx access.log ┘                                   │
                                                         ├─▶ Admin Dashboard
                                                         └─▶ Viewer Dashboard
@@ -25,9 +24,10 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 
 - [x] 2 active log sources ingested (web login, Nginx access)
 - [x] Web login brute-force detection (T1110)
+- [x] Password-spraying detection (T1110.003) — failed logins against 3+ distinct usernames from one IP within 5 min; de-duplicated (one alert per IP per 5 min); `_run_password_spraying_rule()` in `main.py`. Verified live: 3 usernames → 1 spraying alert (no brute force); 1 username ×6 → brute force only; case variants of one username → no alert; repeated spray → still 1 alert
 - [x] Correlation rule — fail-then-success (T1078)
 - [x] XSS detection — signature-based (OWASP/CWE-79, honestly not forced into MITRE)
-- [x] Attack Vectors chart colour-coded: XSS + brute force = red, suspicious login = blue (admin + viewer)
+- [x] Attack Vectors chart colour-coded: XSS, brute force, password spraying = red; suspicious login = blue (admin + viewer)
 - [x] Admin + Viewer dashboards, real backend session auth (not browser popup)
 - [x] Role-based access (viewer can't call block/unblock — 403 enforced server-side)
 - [x] IST timezone across all dashboard timestamps
@@ -46,8 +46,13 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
   firewall rule runs and no account gets locked. In the admin dashboard, "Execute IP Level Block",
   "Block User" and "Unblock" show a "Coming Soon" popup. Blocked panel kept (read-only list).
   Re-enable: set flag to `True` + restore old button handlers in `admin.html` from git history.
-- **SSH ingestion + SSH brute-force detection (T1110)** — not used on this machine (decision: no
-  SSH). Vector config and detection rule still exist; `auth.log` source just has no data.
+
+## Removed from the Project
+
+- **SSH entirely** (decision: no SSH) — `auth.log` source + VRL regex parser removed from
+  `vector/vector.toml`, `/var/log/auth.log` mount removed from `docker-compose.yml`, SSH
+  brute-force rule removed from `main.py`, SSH wording removed from the admin sidebar and demo
+  home page. Project now has 2 log sources (web login, Nginx). rsyslog no longer needed.
 
 ---
 
@@ -64,6 +69,10 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 | Donut chart overflowing panel | Flexbox `min-height: auto` default | `min-height: 0` down the flex chain + bounded canvas wrapper |
 | IP block failed on IPv6 address | `iptables` is IPv4-only, IPv6 needs `ip6tables` | Auto-detect via `ipaddress` module, pick right tool |
 | Duplicate login log entries (~0.6s apart) | Double-tap/click, no submit lock on the button | Added `isSubmitting` guard + disabled button while request in flight |
+| SSH rule matched wrong lines (was open bug D3) | `match` on "Failed password" is an analyzed OR query | Resolved by removing SSH from the project |
+| Alert spam — same attack re-alerted every dashboard refresh (was D1) | Only XSS used `_already_alerted_recently()`; brute-force and correlation rules wrote a new alert on every `/alerts` call | All 4 rules now call `_already_alerted_recently()` → one alert per rule per IP per 5 min |
+| Duplicate alerts with two dashboards open (was D4) | Admin + viewer poll `/alerts` at the same moment; both runs pass the dedupe check before either write is searchable | New `_write_alert()`: deterministic doc ID (alert type + IP + 5-min window) written with `create()` (rejected if it exists) + `refresh="wait_for"`. Verified live: 2 concurrent dashboards for 30 s during an ongoing attack → exactly 1 alert per rule per IP |
+| `/alerts` and `/logs` HTTP 500 right after a fresh start (was F3) | `logs-index` only exists once Vector ships the first event; 3 log searches had no `ignore=[404]` | Added `ignore=[404]` + safe `.get()` access. Verified live: with the index deleted, both return 200 with empty lists |
 
 ---
 
@@ -77,7 +86,7 @@ Ordered by priority. None of these are fixed; this is the to-fix list.
 |---|---|---|---|---|
 | S1 | Stored XSS in admin dashboard via spoofed IP | `main.py:149`, `nginx/default.conf:24`, `admin.html` threat + log tables | `source_ip` = first entry of client-controlled `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for` appends, doesn't replace). Admin renders `source_ip` unescaped via `innerHTML` and inside `onclick="openModal('...')"`. 5 failed logins with `X-Forwarded-For: <img src=x onerror=...>` → script runs in admin's browser, can read the session token and call `/block`/`/unblock` | Take IP from `X-Real-IP` (set by nginx to `$remote_addr`) and validate with `ipaddress`; escape every rendered field; stop building `onclick` strings from data |
 | S2 | IP spoofing evades/frames detection | same as S1 | Same spoofable header — attacker rotates a fake IP per request so the per-IP threshold never trips, or frames an innocent IP so admin blocks it | Same fix as S1 |
-| S3 | IP block doesn't stop web attackers | `main.py:535` | Rule goes in `INPUT`; Docker-published ports (8080/8090) are routed through `FORWARD`/`DOCKER-USER`, never `INPUT`. Only SSH and direct `:8000` are actually blocked. Local attacks show as Docker gateway IP; ngrok attacks come from the local ngrok agent | Also insert into `DOCKER-USER` chain, or honestly describe blocking as "host-level (SSH + API)" |
+| S3 | IP block doesn't stop web attackers | `main.py:535` | Rule goes in `INPUT`; Docker-published ports (8080/8090) are routed through `FORWARD`/`DOCKER-USER`, never `INPUT`. Only direct `:8000` and other host services are actually blocked. Local attacks show as Docker gateway IP; ngrok attacks come from the local ngrok agent | Also insert into `DOCKER-USER` chain, or honestly describe blocking as "host-level (API only)" |
 | S4 | Dashboard login brute-forceable | `main.py:83-86`, `/auth/login` | 4-digit hardcoded passwords committed to GitHub, no rate limit, SIEM doesn't log its own login attempts | Rate-limit + log `/auth/login` failures as a log source; move creds to env vars |
 | S5 | OpenSearch exposed with no auth | `docker-compose.yml` ports 9200/5601 | Security plugin disabled and ports published on all interfaces → anyone on the LAN can read/delete/forge logs, alerts, blocklist | Bind to `127.0.0.1:9200:9200` / `127.0.0.1:5601:5601` |
 | S6 | Loopback protection bypassable | `main.py:64, 520` | `NEVER_BLOCK_IPS` is exact string match — `0:0::1`, `127.0.0.2` pass | Use `ipaddress.ip_address(ip).is_loopback` (and protect own LAN IP) |
@@ -87,10 +96,7 @@ Ordered by priority. None of these are fixed; this is the to-fix list.
 
 | # | Bug | Where | Root Cause | Suggested Fix |
 |---|---|---|---|---|
-| D1 | Alert spam — ~40 duplicate alerts per attack per open dashboard | `main.py:340-355`, `452-471` | `_already_alerted_recently()` only used by XSS rule; brute-force and correlation rules insert a new alert every `/alerts` call (every 3s per dashboard). Admin UI's group-by-IP hides it, but stat tile + bar chart are inflated | Call dedupe in all rules |
 | D2 | Detection only runs while a dashboard is open | `main.py:482` | Detection is triggered by `GET /alerts` polling. No dashboard open during attack + 2-min window passes = attack never detected. Two dashboards = double runs/races | Run `_run_detection()` in a background loop (FastAPI startup task) |
-| D3 | SSH rule matches wrong lines (incl. successful logins) | `main.py:327` | `match` on "Failed password" is analyzed OR → matches `Accepted password`, sudo "incorrect password", etc. Lines without IP group under `unknown` → bogus alert | Use `match_phrase` |
-| D4 | Dedupe race | `_already_alerted_recently` | OpenSearch ~1s refresh — just-written alert not yet searchable, so duplicates can slip through | `refresh="wait_for"` on alert index, or deterministic doc IDs |
 | D5 | Big attacks under-counted | `main.py:323` | `size: 500` caps events per window | Use a `terms` aggregation on `source_ip` |
 
 ### Functional / UI
@@ -99,7 +105,6 @@ Ordered by priority. None of these are fixed; this is the to-fix list.
 |---|---|---|---|---|
 | F1 | Nginx rows show "Invalid Date", junk chart bucket | `toIST()` in `admin.html` + `viewer.html` | Nginx `$time_iso8601` ends `+00:00`; code appends `Z` → `...+00:00Z` → unparseable | Only append `Z` if no timezone suffix present |
 | F2 | Blocklist drifts from real firewall | `main.py:553-570` | iptables rules don't survive reboot, but `blocked-index` record does. Unblock then fails on `iptables -D` → 500 before index cleanup → stuck entry | Delete index record even if rule missing; re-apply rules on API startup |
-| F3 | `/alerts` + `/logs` 500 on fresh start | `main.py:259, 333, 445` | No `ignore=[404]` before Vector creates `logs-index` | Add `ignore=[404]` |
 | F4 | Unbounded `limit` → 500 | `/logs`, `/alerts` | >10000 exceeds `max_result_window` | Cap `limit` |
 | F5 | `demo_sessions` never expire | `main.py:80` | No TTL/cleanup | Add expiry like dashboard sessions |
 
@@ -118,7 +123,7 @@ Ordered by priority. None of these are fixed; this is the to-fix list.
 ## Pending / Next Up
 
 ### High priority
-- [ ] Password-spraying detection rule — distinct usernames from one IP (MITRE T1110.003)
+- [ ] Update documents for SSH removal + password-spraying rule (deferred to the end by user): report ("4 rules" → rules table, 3 → 2 log sources, test cases, future scope), slides 3/7/8/10/18, viva guide, README
 - [ ] Formal Detection Playbooks (one write-up per rule)
 - [ ] Incident Verification Reports (proof-of-detection per rule: screenshot, timestamp, resolution)
 - [ ] Full live-demo rehearsal, timed, in the exact order for faculty
@@ -143,4 +148,4 @@ Ordered by priority. None of these are fixed; this is the to-fix list.
 
 ---
 
-*Last updated: blocking disabled behind Coming Soon popup, chart colours added, SSH dropped; project verified running end-to-end on Docker (web login + Nginx pipeline, dashboards, API).*
+*Last updated: SSH fully removed; password-spraying rule (T1110.003) added; bugs D1 (alert spam), D4 (concurrent duplicate alerts) and F3 (500 on fresh start) fixed and verified live; documents not yet updated for these changes.*

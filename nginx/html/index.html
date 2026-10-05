@@ -86,8 +86,8 @@
   <div class="hero">
     <h1>A lightweight <span class="accent">SIEM</span> built from scratch</h1>
     <p>
-      Micro-SIEM ingests real Linux authentication logs, web login attempts, and
-      Nginx access traffic — detects brute-force attacks, credential compromise
+      Micro-SIEM ingests real web login attempts and Nginx access traffic —
+      detects brute-force and password-spraying attacks, credential compromise
       patterns, and XSS injection attempts — and shows it all live on a
       role-based dashboard. Built as a final-year cybersecurity project.
     </p>
@@ -98,17 +98,17 @@
     <div class="card">
       <div class="icon">📡</div>
       <h3>Multi-Source Ingestion</h3>
-      <p>Reads real SSH auth logs, custom web login events, and Nginx access logs — three independent, live data sources feeding one pipeline.</p>
+      <p>Reads custom web login events and Nginx access logs — independent, live data sources feeding one pipeline.</p>
     </div>
     <div class="card">
       <div class="icon">🧠</div>
       <h3>Real Detection Logic</h3>
-      <p>Brute-force threshold rules, a true cross-event correlation rule (fail-then-success), and signature-based XSS detection — not a black box.</p>
+      <p>Brute-force and password-spraying rules, a true cross-event correlation rule (fail-then-success), and signature-based XSS detection — not a black box.</p>
     </div>
     <div class="card">
       <div class="icon">🗺️</div>
       <h3>MITRE ATT&amp;CK Mapped</h3>
-      <p>Alerts are tagged with real technique IDs (T1110 Brute Force, T1078 Valid Accounts) where they genuinely apply — no forced mappings.</p>
+      <p>Alerts are tagged with real technique IDs (T1110 Brute Force, T1110.003 Password Spraying, T1078 Valid Accounts) where they genuinely apply — no forced mappings.</p>
     </div>
     <div class="card">
       <div class="icon">📊</div>

@@ -2,15 +2,19 @@
 Micro-SIEM API - FastAPI backend
 
 Logic overview (this is the part that matters for your viva):
-1. Connect to OpenSearch (where Vector already pushed auth.log + web login events)
+1. Connect to OpenSearch (where Vector already pushed web login + Nginx events)
 2. /logs endpoint -> just returns recent raw log events
 3. /login endpoint -> demo web login page posts here; every attempt is logged
 4. /alerts endpoint -> runs detection, PERSISTS alerts once triggered
    (an alert stays visible on the dashboard even after the original failed
    attempts age out of the detection time window - it's a historical record,
    not a live-only view. This matches how real SIEMs handle alert history.)
-5. Detection rule (v1): 5 failed logins from the same source within 2 minutes,
-   checked across TWO sources - SSH (auth.log) and web login (login.log)
+5. Detection rules:
+   - Brute force: 5 failed web logins from the same source within 2 minutes
+   - Password spraying: failed logins against 3+ different usernames from
+     the same source within 5 minutes
+   - Correlation: failed attempts followed by a success from the same source
+   - XSS: known payload signatures in Nginx request paths
 """
 
 import os
@@ -25,6 +29,7 @@ from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from opensearchpy import OpenSearch
+from opensearchpy.exceptions import ConflictError
 
 app = FastAPI(title="Micro-SIEM API")
 
@@ -53,6 +58,12 @@ BLOCKED_INDEX = "blocked-index"
 
 FAILED_LOGIN_THRESHOLD = 5      # how many failed attempts...
 TIME_WINDOW_MINUTES = 2         # ...within this many minutes = alert
+
+# Password spraying: few attempts per account but across MANY accounts, so
+# it stays under the brute-force threshold. Spraying is deliberately slow,
+# hence a wider window than brute force.
+SPRAY_USERNAME_THRESHOLD = 3    # distinct usernames failed from one IP...
+SPRAY_WINDOW_MINUTES = 5        # ...within this many minutes = alert
 
 # How long to wait before allowing the SAME alert (same type + source)
 # to fire again - prevents spamming a new alert doc every 3-second
@@ -154,7 +165,7 @@ def web_login(payload: LoginRequest, request: Request):
     Simple logic, no lockout:
     1. Validate credentials against the hardcoded demo account
     2. Log every attempt (success/fail) as JSON - Vector picks this up as
-       a second real log source, separate from SSH auth.log
+       a real log source, alongside the Nginx access log
     """
     source_ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
     username = payload.username
@@ -266,8 +277,9 @@ def get_logs(limit: int = 50, session: dict = Depends(require_session)):
         "sort": [{"timestamp": {"order": "desc"}}],
         "query": {"match_all": {}},
     }
-    result = client.search(index=LOGS_INDEX, body=query)
-    hits = [hit["_source"] for hit in result["hits"]["hits"]]
+    # ignore=[404]: logs-index only exists once Vector has shipped the first event
+    result = client.search(index=LOGS_INDEX, body=query, ignore=[404])
+    hits = [hit["_source"] for hit in result.get("hits", {}).get("hits", [])]
     return {"count": len(hits), "logs": hits}
 
 
@@ -277,6 +289,8 @@ def _already_alerted_recently(alert_type: str, source_ip: str) -> bool:
     Check if an alert of this type+source was already raised within
     ALERT_DEDUPE_MINUTES. Prevents inserting a new alert document every
     single dashboard refresh while the same attack is still ongoing.
+    Every rule calls this before writing an alert; _write_alert() then
+    closes the remaining race between two detection runs at the same time.
     """
     since = datetime.utcnow() - timedelta(minutes=ALERT_DEDUPE_MINUTES)
     query = {
@@ -295,11 +309,29 @@ def _already_alerted_recently(alert_type: str, source_ip: str) -> bool:
     return result.get("hits", {}).get("total", {}).get("value", 0) > 0
 
 
+def _write_alert(alert: dict):
+    """
+    Write an alert at most once per alert type + source IP + dedupe window.
+
+    The document ID is built from those three values and written with
+    create(), which OpenSearch rejects if that ID already exists. So when two
+    dashboards (e.g. admin + viewer) poll /alerts at the same moment and both
+    pass the _already_alerted_recently() check, only the first write succeeds.
+    refresh="wait_for" makes the alert searchable before the next detection run.
+    """
+    window = int(datetime.utcnow().timestamp() // (ALERT_DEDUPE_MINUTES * 60))
+    doc_id = f"{alert['alert_type']}|{alert['source_ip']}|{window}"
+    try:
+        client.create(index=ALERTS_INDEX, id=doc_id, body=alert, refresh="wait_for")
+    except ConflictError:
+        pass  # another detection run already wrote this alert
+
+
 def _run_detection():
     """
-    Detection logic (v1 - brute force), across two sources:
-    1. SSH failed logins (auth.log, matched on "Failed password" text)
-    2. Web login failures (webapp login.log, matched on event=login_failed)
+    Detection logic (v1 - brute force) on web login failures
+    (webapp login.log, matched on event=login_failed), then the
+    password-spraying, correlation and XSS rules.
 
     New alerts are written to ALERTS_INDEX (permanent record).
     Deduping avoids writing a duplicate alert every few seconds while
@@ -308,15 +340,6 @@ def _run_detection():
     since = datetime.utcnow() - timedelta(minutes=TIME_WINDOW_MINUTES)
 
     sources = [
-        {
-            "alert_type": "SSH Brute Force Attempt",
-            "rule_name": "failed_ssh_logins",
-            "match_field": "raw_message",
-            "match_value": "Failed password",
-            "mitre_technique": "Brute Force",
-            "mitre_id": "T1110",
-            "mitre_tactic": "Credential Access",
-        },
         {
             "alert_type": "Web Login Brute Force",
             "rule_name": "failed_web_logins",
@@ -340,8 +363,8 @@ def _run_detection():
                 }
             },
         }
-        result = client.search(index=LOGS_INDEX, body=query)
-        events = [hit["_source"] for hit in result["hits"]["hits"]]
+        result = client.search(index=LOGS_INDEX, body=query, ignore=[404])
+        events = [hit["_source"] for hit in result.get("hits", {}).get("hits", [])]
 
         grouped = defaultdict(list)
         for event in events:
@@ -349,6 +372,8 @@ def _run_detection():
 
         for source_ip, attempts in grouped.items():
             if len(attempts) < FAILED_LOGIN_THRESHOLD:
+                continue
+            if _already_alerted_recently(src["alert_type"], source_ip):
                 continue
 
             alert = {
@@ -362,8 +387,9 @@ def _run_detection():
                 "mitre_id": src["mitre_id"],
                 "mitre_tactic": src["mitre_tactic"],
             }
-            client.index(index=ALERTS_INDEX, body=alert)
+            _write_alert(alert)
 
+    _run_password_spraying_rule()
     _run_correlation_rule()
     _run_xss_detection()
 
@@ -426,7 +452,7 @@ def _run_xss_detection():
             "mitre_id": "CWE-79",
             "mitre_tactic": "N/A",
         }
-        client.index(index=ALERTS_INDEX, body=alert)
+        _write_alert(alert)
 
 
 def _run_correlation_rule():
@@ -452,8 +478,8 @@ def _run_correlation_rule():
             }
         },
     }
-    result = client.search(index=LOGS_INDEX, body=query)
-    events = [hit["_source"] for hit in result["hits"]["hits"]]
+    result = client.search(index=LOGS_INDEX, body=query, ignore=[404])
+    events = [hit["_source"] for hit in result.get("hits", {}).get("hits", [])]
 
     grouped = defaultdict(list)
     for event in events:
@@ -466,6 +492,8 @@ def _run_correlation_rule():
                 fail_count += 1
             elif event.get("event") == "login_success" and fail_count >= 2:
                 alert_type = "Suspicious Login: Failed Attempts Then Success"
+                if _already_alerted_recently(alert_type, source_ip):
+                    break
                 alert = {
                     "timestamp": datetime.utcnow().isoformat(),
                     "alert_type": alert_type,
@@ -477,8 +505,61 @@ def _run_correlation_rule():
                     "mitre_id": "T1078",
                     "mitre_tactic": "Initial Access",
                 }
-                client.index(index=ALERTS_INDEX, body=alert)
+                _write_alert(alert)
                 break
+
+
+def _run_password_spraying_rule():
+    """
+    Password spraying rule (MITRE T1110.003). Brute force tries MANY
+    passwords against ONE account; spraying tries one or two common
+    passwords against MANY accounts, so no single account collects enough
+    failures to trip the brute-force threshold (or a lockout). Logic:
+
+    If one source IP has failed web logins against SPRAY_USERNAME_THRESHOLD
+    or more DIFFERENT usernames within SPRAY_WINDOW_MINUTES, raise an alert.
+    The key difference from brute force: count distinct usernames, not events.
+    """
+    since = datetime.utcnow() - timedelta(minutes=SPRAY_WINDOW_MINUTES)
+    query = {
+        "size": 500,
+        "query": {
+            "bool": {
+                "must": [
+                    {"term": {"event.keyword": "login_failed"}},
+                    {"range": {"timestamp": {"gte": since.isoformat()}}},
+                ]
+            }
+        },
+    }
+    result = client.search(index=LOGS_INDEX, body=query, ignore=[404])
+    events = [hit["_source"] for hit in result.get("hits", {}).get("hits", [])]
+
+    usernames_by_ip = defaultdict(set)
+    for event in events:
+        username = (event.get("username") or "").strip().lower()
+        if username:
+            usernames_by_ip[event.get("source_ip", "unknown")].add(username)
+
+    alert_type = "Password Spraying Attack"
+    for source_ip, usernames in usernames_by_ip.items():
+        if len(usernames) < SPRAY_USERNAME_THRESHOLD:
+            continue
+        if _already_alerted_recently(alert_type, source_ip):
+            continue
+
+        alert = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "alert_type": alert_type,
+            "source_ip": source_ip,
+            "attempt_count": len(usernames),
+            "severity": "HIGH",
+            "matched_rule": f"{SPRAY_USERNAME_THRESHOLD}_distinct_usernames_{SPRAY_WINDOW_MINUTES}min",
+            "mitre_technique": "Password Spraying",
+            "mitre_id": "T1110.003",
+            "mitre_tactic": "Credential Access",
+        }
+        _write_alert(alert)
 
 
 @app.get("/alerts")
@@ -522,7 +603,7 @@ def block_ip(ip: str, session: dict = Depends(require_admin)):
     Requires the api container to run with network_mode: host and
     NET_ADMIN capability (see docker-compose.yml) - this is what lets
     a command run inside the container actually affect the HOST's
-    firewall, since SSH runs on the host, not in a container.
+    firewall, not just the container's own network namespace.
 
     Safety: NEVER_BLOCK_IPS can never be blocked, no matter what -
     protects against ever locking yourself out of your own machine.

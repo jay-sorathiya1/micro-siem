@@ -181,9 +181,9 @@
             plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10 }, color: themeColors.text } } }
         };
 
-        // Attack-vector bar colours: XSS + brute force = red, suspicious login = blue
+        // Attack-vector bar colours: XSS, brute force, spraying = red; suspicious login = blue
         function alertColor(type) {
-            if (type.includes('XSS') || type.includes('Brute Force')) return themeColors.rose;
+            if (type.includes('XSS') || type.includes('Brute Force') || type.includes('Spraying')) return themeColors.rose;
             return themeColors.blue;
         }
 

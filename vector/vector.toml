@@ -3,38 +3,14 @@
 # This is the entire logic Vector follows, always these 3 steps
 # ============================================================
 
-# --- SOURCE: where the data comes from ---
-[sources.auth_log]
-type = "file"
-include = ["/var/log/auth.log"]
-read_from = "end"          # only new lines from now on, not old history
-
-# --- TRANSFORM: light parsing so fields are usable later ---
-# We tag every event with a "log_type" so FastAPI can filter by source later
-[transforms.parse_auth]
-type = "remap"
-inputs = ["auth_log"]
-source = '''
-.log_type = "linux_auth"
-.raw_message = .message
-
-# Extract source IP from lines like:
-# "Failed password for rabbit from 192.168.1.5 port 55224 ssh2"
-parsed, err = parse_regex(.message, r'from (?P<ip>[0-9a-fA-F:.]+) port')
-if err == null {
-    .source_ip = parsed.ip
-} else {
-    .source_ip = "unknown"
-}
-'''
-
-# --- SOURCE 2: web login attempts (JSON lines written by FastAPI /login) ---
+# --- SOURCE 1: web login attempts (JSON lines written by FastAPI /login) ---
 [sources.webapp_login]
 type = "file"
 include = ["/var/log/webapp/login.log"]
-read_from = "end"
+read_from = "end"          # only new lines from now on, not old history
 
-# --- TRANSFORM 2: parse the JSON, already structured since we wrote it ourselves ---
+# --- TRANSFORM 1: parse the JSON, already structured since we wrote it ourselves ---
+# Each event already carries a "log_type" so FastAPI can filter by source later
 [transforms.parse_webapp]
 type = "remap"
 inputs = ["webapp_login"]
@@ -45,7 +21,7 @@ if err == null {
 }
 '''
 
-# --- SOURCE 3: nginx access log (JSON format) ---
+# --- SOURCE 2: nginx access log (JSON format) ---
 [sources.nginx_access]
 type = "file"
 include = ["/var/log/nginx/access_json.log"]
@@ -64,7 +40,7 @@ if err == null {
 # --- SINK: where the data goes ---
 [sinks.opensearch_logs]
 type = "elasticsearch"
-inputs = ["parse_auth", "parse_webapp", "parse_nginx"]
+inputs = ["parse_webapp", "parse_nginx"]
 endpoints = ["http://opensearch:9200"]
 mode = "bulk"
 api_version = "v8"
@@ -75,5 +51,5 @@ index = "logs-index"
 # Console sink too, for debugging — lets you SEE events in `docker-compose logs vector`
 [sinks.debug_console]
 type = "console"
-inputs = ["parse_auth", "parse_webapp", "parse_nginx"]
+inputs = ["parse_webapp", "parse_nginx"]
 encoding.codec = "json"

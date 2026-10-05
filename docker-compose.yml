@@ -42,7 +42,7 @@ services:
       - siem-net
 
   # ---------------------------------------------------------
-  # Vector: reads auth.log from the HOST machine, pushes to OpenSearch
+  # Vector: reads the web login log and Nginx access log, pushes to OpenSearch
   # Ready-made official image, config is mounted in via volume
   # ---------------------------------------------------------
   vector:
@@ -50,7 +50,6 @@ services:
     container_name: vector
     volumes:
       - ./vector/vector.toml:/etc/vector/vector.toml:ro
-      - /var/log/auth.log:/var/log/auth.log:ro
       - webapp-logs:/var/log/webapp:ro
       - nginx-logs:/var/log/nginx:ro
     depends_on:
@@ -64,9 +63,9 @@ services:
   # Custom Dockerfile — this is YOUR code
   #
   # NETWORK MODE: host, with NET_ADMIN capability.
-  # Real IP-blocking runs `iptables` commands that must affect the HOST's
-  # firewall - SSH runs on the host machine, not inside a container, so
-  # this container needs to share the host's network stack directly to
+  # IP-blocking (planned, currently disabled) runs `iptables` commands that
+  # must affect the HOST's firewall, not just this container's, so this
+  # container needs to share the host's network stack directly to
   # actually block traffic reaching it. Side effect: "ports" below is
   # ignored in host mode (the container just uses the host's network),
   # and it reaches OpenSearch via "localhost:9200" instead of the
