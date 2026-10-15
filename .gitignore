@@ -1,0 +1,5 @@
+# Real dashboard passwords - see .env.example
+.env
+
+__pycache__/
+*.pyc

@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TERMINAL-SIEM // Viewer</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Served locally (vendor/) so the dashboard works without internet -->
+    <script src="vendor/tailwind-3.4.17.js"></script>
+    <script src="vendor/chart-4.5.1.umd.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -130,7 +131,8 @@
     </main>
 
     <script>
-        const API_URL = window.MICRO_SIEM_API_URL || `http://${window.location.hostname}:8000`;
+        // Same-origin: this page's Nginx proxies /api/ to FastAPI
+        const API_URL = window.MICRO_SIEM_API_URL || "/api";
 
         // --- Session guard: redirect to login if no valid token ---
         const SIEM_TOKEN = sessionStorage.getItem("siem_token");
@@ -167,9 +169,13 @@
             document.getElementById('live-clock').innerText = istString + " IST";
         }, 1000);
 
+        // FastAPI timestamps have no zone (they're UTC); Nginx ones already end
+        // in an offset like +00:00 - only add 'Z' when there's no zone at all.
         function toIST(ts) {
             if (!ts) return '-';
-            const d = new Date(ts.endsWith('Z') ? ts : ts + 'Z');
+            const hasZone = /([zZ]|[+-]\d\d:?\d\d)$/.test(ts);
+            const d = new Date(hasZone ? ts : ts + 'Z');
+            if (isNaN(d)) return '-';
             return d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
         }
 
@@ -225,8 +231,9 @@
 
             const buckets = {};
             logs.forEach(l => {
-                const t = l.timestamp ? toIST(l.timestamp).slice(0, 5) : '??:??';
-                buckets[t] = (buckets[t] || 0) + 1;
+                const t = toIST(l.timestamp);
+                if (t === '-') return;  // missing/unparseable timestamp - no junk bucket
+                buckets[t.slice(0, 5)] = (buckets[t.slice(0, 5)] || 0) + 1;
             });
             const times = Object.keys(buckets).sort();
             lineChart.data.labels = times;

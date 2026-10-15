@@ -1,21 +1,25 @@
-version: "3.8"
-
 services:
 
   # ---------------------------------------------------------
   # OpenSearch: stores and indexes logs + alerts
   # Ready-made official image, no Dockerfile needed
+  # Versions are pinned (not :latest) so a surprise upgrade can't break the
+  # demo - a version jump already broke Vector once (the _type bug).
   # ---------------------------------------------------------
   opensearch:
-    image: opensearchproject/opensearch:latest
+    image: opensearchproject/opensearch:3.8.0
     container_name: opensearch
     environment:
       - discovery.type=single-node
       - DISABLE_SECURITY_PLUGIN=true      # simplifies local dev; do NOT do this in production
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    # Bound to 127.0.0.1 only: the security plugin is off, so publishing
+    # these on every interface would let anyone on the LAN read, delete or
+    # forge logs and alerts. Vector reaches OpenSearch over the Docker
+    # network and the API (host network) over localhost, so neither needs more.
     ports:
-      - "9200:9200"   # REST API — this is what FastAPI/Vector talk to
-      - "9600:9600"   # performance analyzer, not essential but harmless
+      - "127.0.0.1:9200:9200"   # REST API — this is what FastAPI/Vector talk to
+      - "127.0.0.1:9600:9600"   # performance analyzer, not essential but harmless
     networks:
       - siem-net
     healthcheck:
@@ -29,15 +33,16 @@ services:
   # Handy for sanity-checking data before it hits the custom dashboards
   # ---------------------------------------------------------
   opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:latest
+    image: opensearchproject/opensearch-dashboards:3.8.0
     container_name: opensearch-dashboards
     environment:
       - OPENSEARCH_HOSTS=["http://opensearch:9200"]
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
     ports:
-      - "5601:5601"
+      - "127.0.0.1:5601:5601"   # localhost only, same reason as OpenSearch
     depends_on:
-      - opensearch
+      opensearch:
+        condition: service_healthy
     networks:
       - siem-net
 
@@ -46,14 +51,18 @@ services:
   # Ready-made official image, config is mounted in via volume
   # ---------------------------------------------------------
   vector:
-    image: timberio/vector:latest-alpine
+    # vector-data keeps Vector's read checkpoints, so recreating the
+    # container doesn't skip or re-read log lines.
+    image: timberio/vector:0.59.0-alpine
     container_name: vector
     volumes:
       - ./vector/vector.toml:/etc/vector/vector.toml:ro
       - webapp-logs:/var/log/webapp:ro
       - nginx-logs:/var/log/nginx:ro
+      - vector-data:/var/lib/vector
     depends_on:
-      - opensearch
+      opensearch:
+        condition: service_healthy
     networks:
       - siem-net
     command: ["--config", "/etc/vector/vector.toml"]
@@ -77,13 +86,18 @@ services:
     network_mode: "host"
     cap_add:
       - NET_ADMIN
+    # Dashboard passwords come from the git-ignored .env file (copy
+    # .env.example to .env). Compose refuses to start if they're missing.
     environment:
       - OPENSEARCH_HOST=localhost
       - OPENSEARCH_PORT=9200
+      - DASHBOARD_ADMIN_PASSWORD=${DASHBOARD_ADMIN_PASSWORD:?set it in .env (see .env.example)}
+      - DASHBOARD_VIEWER_PASSWORD=${DASHBOARD_VIEWER_PASSWORD:?set it in .env (see .env.example)}
     volumes:
       - webapp-logs:/var/log/webapp
     depends_on:
-      - opensearch
+      opensearch:
+        condition: service_healthy
 
   # ---------------------------------------------------------
   # Nginx: serves the crazy login page, proxies /api/ to FastAPI
@@ -96,7 +110,7 @@ services:
   # host.docker.internal:8000 (see nginx/default.conf).
   # ---------------------------------------------------------
   nginx:
-    image: nginx:alpine
+    image: nginx:1.30.6-alpine
     container_name: nginx-loginpage
     ports:
       - "8080:80"
@@ -112,14 +126,18 @@ services:
       - siem-net
 
   # ---------------------------------------------------------
-  # React Console: extra dashboard, terminal-style UI
-  # Plain HTML+CDN React, nginx just serves the static file
+  # React Console: admin + viewer dashboards, terminal-style UI
+  # Plain HTML + JS (Tailwind/Chart.js served locally from vendor/, so it
+  # works without internet). Nginx serves the files and proxies /api/ to
+  # FastAPI, so only port 8090 needs to be reachable.
   # ---------------------------------------------------------
   react-dashboard:
-    image: nginx:alpine
+    image: nginx:1.30.6-alpine
     container_name: react-console
     ports:
       - "8090:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./react-dashboard:/usr/share/nginx/html:ro
       - ./react-dashboard/nginx.conf:/etc/nginx/conf.d/default.conf:ro
@@ -135,3 +153,4 @@ networks:
 volumes:
   webapp-logs:
   nginx-logs:
+  vector-data:

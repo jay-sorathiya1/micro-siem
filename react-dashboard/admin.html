@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TERMINAL-SIEM // Admin</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Served locally (vendor/) so the dashboard works without internet -->
+    <script src="vendor/tailwind-3.4.17.js"></script>
+    <script src="vendor/chart-4.5.1.umd.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -245,7 +246,8 @@
     </div>
 
     <script>
-        const API_URL = window.MICRO_SIEM_API_URL || `http://${window.location.hostname}:8000`;
+        // Same-origin: this page's Nginx proxies /api/ to FastAPI
+        const API_URL = window.MICRO_SIEM_API_URL || "/api";
         const startTime = Date.now();
 
         // --- Session guard: redirect to login if no valid token ---
@@ -367,8 +369,9 @@
             // Log activity line (bucket by minute) - almost always has data, unlike alert rate
             const buckets = {};
             logs.forEach(l => {
-                const t = l.timestamp ? toIST(l.timestamp).slice(0, 5) : '??:??';
-                buckets[t] = (buckets[t] || 0) + 1;
+                const t = toIST(l.timestamp);
+                if (t === '-') return;  // missing/unparseable timestamp - no junk bucket
+                buckets[t.slice(0, 5)] = (buckets[t.slice(0, 5)] || 0) + 1;
             });
             const times = Object.keys(buckets).sort();
             lineChart.data.labels = times;
@@ -384,13 +387,13 @@
             barChart.data.datasets[0].hoverBackgroundColor = barChart.data.labels.map(alertColor);
             barChart.update();
 
-            // Logs table
+            // Logs table - every field escaped: log data is attacker-controlled
             const logBody = document.getElementById('log-table-body');
             logBody.innerHTML = logs.slice(0, 100).map(l => `
                 <tr>
-                    <td class="text-slate-500">${toIST(l.timestamp)}</td>
-                    <td class="text-sky-500">${l.log_type || '-'}</td>
-                    <td class="text-slate-200">${l.source_ip || '-'}</td>
+                    <td class="text-slate-500">${escapeHtml(toIST(l.timestamp))}</td>
+                    <td class="text-sky-500">${escapeHtml(l.log_type || '-')}</td>
+                    <td class="text-slate-200">${escapeHtml(l.source_ip || '-')}</td>
                     <td class="text-slate-400">${escapeHtml((l.message || l.event || '').toString().slice(0,80))}</td>
                 </tr>`).join('');
 
@@ -409,25 +412,31 @@
             const threatBody = document.getElementById('threat-list');
             threatBody.innerHTML = groupedThreats.slice(0, 50).map(a => `
                 <tr>
-                    <td class="mono font-bold text-sky-400">${a.source_ip}</td>
-                    <td><span class="px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/30 text-[10px] font-bold">${a.severity}</span></td>
-                    <td class="text-slate-300">${a.alert_type}</td>
-                    <td class="text-slate-500 mono">${a.mitre_id || 'N/A'}</td>
-                    <td class="text-slate-500">${toIST(a.timestamp)}</td>
+                    <td class="mono font-bold text-sky-400">${escapeHtml(a.source_ip)}</td>
+                    <td><span class="px-1.5 py-0.5 bg-rose-500/10 text-rose-500 border border-rose-500/30 text-[10px] font-bold">${escapeHtml(a.severity)}</span></td>
+                    <td class="text-slate-300">${escapeHtml(a.alert_type)}</td>
+                    <td class="text-slate-500 mono">${escapeHtml(a.mitre_id || 'N/A')}</td>
+                    <td class="text-slate-500">${escapeHtml(toIST(a.timestamp))}</td>
                     <td>
-                        <button onclick="openModal('${a.source_ip}')" class="text-[9px] font-bold uppercase tracking-tighter bg-slate-800 px-3 py-1 border border-slate-700 hover:bg-rose-600 hover:border-rose-500 transition-all">Analyze / Mitigate</button>
+                        <button data-ip="${escapeHtml(a.source_ip)}" class="text-[9px] font-bold uppercase tracking-tighter bg-slate-800 px-3 py-1 border border-slate-700 hover:bg-rose-600 hover:border-rose-500 transition-all">Analyze / Mitigate</button>
                     </td>
                 </tr>`).join('');
         }
 
+        // FastAPI timestamps have no zone (they're UTC); Nginx ones already end
+        // in an offset like +00:00 - only add 'Z' when there's no zone at all.
         function toIST(ts) {
             if (!ts) return '-';
-            const d = new Date(ts.endsWith('Z') ? ts : ts + 'Z');
+            const hasZone = /([zZ]|[+-]\d\d:?\d\d)$/.test(ts);
+            const d = new Date(hasZone ? ts : ts + 'Z');
+            if (isNaN(d)) return '-';
             return d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
         }
 
+        // Safe for both element text and attribute values (quotes escaped too)
         function escapeHtml(s) {
-            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
         }
 
         // --- Blocked panel ---
@@ -440,11 +449,10 @@
             }
             el.innerHTML = blocked.map(b => {
                 const label = b.type === 'ip' ? b.ip : b.username;
-                const unblockFn = b.type === 'ip' ? `unblockIp('${b.ip}')` : `unblockAccount('${b.username}')`;
                 const badge = b.type === 'ip' ? 'IP' : 'ACCOUNT';
                 return `<div class="flex justify-between items-center px-2 py-1.5 border-b border-slate-800 text-[11px]">
                     <span><span class="text-slate-500 text-[9px] mr-1">[${badge}]</span> <span class="text-slate-200">${escapeHtml(label)}</span></span>
-                    <button onclick="${unblockFn}" class="text-emerald-400 hover:text-emerald-300 text-[9px] font-bold uppercase">Unblock</button>
+                    <button data-unblock-type="${b.type === 'ip' ? 'ip' : 'account'}" data-target="${escapeHtml(label)}" class="text-emerald-400 hover:text-emerald-300 text-[9px] font-bold uppercase">Unblock</button>
                 </div>`;
             }).join('');
         }
@@ -479,6 +487,19 @@
         function unblockAccount(username) { showComingSoon('Account Unblocking'); }
 
         function blockAccountManual() { showComingSoon('Account Blocking'); }
+
+        // Click handlers via data attributes, not onclick="...'${value}'..."
+        // strings - log data never ends up inside JavaScript code.
+        document.getElementById('threat-list').addEventListener('click', e => {
+            const btn = e.target.closest('button[data-ip]');
+            if (btn) openModal(btn.dataset.ip);
+        });
+        document.getElementById('blocked-list').addEventListener('click', e => {
+            const btn = e.target.closest('button[data-unblock-type]');
+            if (!btn) return;
+            if (btn.dataset.unblockType === 'ip') unblockIp(btn.dataset.target);
+            else unblockAccount(btn.dataset.target);
+        });
 
         initCharts();
         refresh();

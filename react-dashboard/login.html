@@ -50,7 +50,8 @@
   </div>
 
   <script>
-    const API_URL = window.MICRO_SIEM_API_URL || `http://${window.location.hostname}:8000`;
+    // Same-origin: this page's Nginx proxies /api/ to FastAPI
+    const API_URL = window.MICRO_SIEM_API_URL || "/api";
     const form = document.getElementById("loginForm");
     const errorEl = document.getElementById("error");
 

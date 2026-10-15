@@ -3,6 +3,11 @@
 # This is the entire logic Vector follows, always these 3 steps
 # ============================================================
 
+# Where Vector remembers how far it has read each log file. Mounted as a
+# Docker volume (vector-data), so a recreated container carries on where it
+# stopped instead of skipping or re-reading lines.
+data_dir = "/var/lib/vector"
+
 # --- SOURCE 1: web login attempts (JSON lines written by FastAPI /login) ---
 [sources.webapp_login]
 type = "file"

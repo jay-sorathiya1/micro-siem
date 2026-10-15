@@ -9,8 +9,9 @@ edit, but anything worth remembering for the report or viva.
 ## Project Flow (high level)
 
 ```
-web login.log ───┬──▶ Vector ──▶ OpenSearch ──▶ FastAPI (detection + auth)
+web login.log ───┬──▶ Vector ──▶ OpenSearch ──▶ FastAPI (background detection loop + auth)
 nginx access.log ┘                                   │
+                                     react-dashboard Nginx (8090, proxies /api/)
                                                         ├─▶ Admin Dashboard
                                                         └─▶ Viewer Dashboard
 
@@ -22,11 +23,12 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 
 ## Status: Core Features (Done)
 
-- [x] 2 active log sources ingested (web login, Nginx access)
-- [x] Web login brute-force detection (T1110)
-- [x] Password-spraying detection (T1110.003) — failed logins against 3+ distinct usernames from one IP within 5 min; de-duplicated (one alert per IP per 5 min); `_run_password_spraying_rule()` in `main.py`. Verified live: 3 usernames → 1 spraying alert (no brute force); 1 username ×6 → brute force only; case variants of one username → no alert; repeated spray → still 1 alert
+- [x] 2 active log sources ingested (web login, Nginx access) + dashboard logins now logged too (`log_type: dashboard_login`)
+- [x] Web login brute-force detection (T1110) — **now 5 failures on the SAME username** from one IP within 2 min (was: any usernames). Keeps brute force and spraying separate: a spray across many accounts no longer also trips brute force
+- [x] Password-spraying detection (T1110.003) — failed logins against 3+ distinct usernames from one IP within 5 min; de-duplicated (one alert per IP per 5 min); `_run_password_spraying_rule()` in `main.py`. Verified live (before the aggregation rewrite): 3 usernames → 1 spraying alert (no brute force); 1 username ×6 → brute force only; case variants of one username → no alert; repeated spray → still 1 alert
 - [x] Correlation rule — fail-then-success (T1078)
-- [x] XSS detection — signature-based (OWASP/CWE-79, honestly not forced into MITRE)
+- [x] XSS detection — signature-based (OWASP/CWE-79, honestly not forced into MITRE); now matches the URL-decoded path
+- [x] Detection runs in a background loop every 5 s (no longer depends on a dashboard being open)
 - [x] Attack Vectors chart colour-coded: XSS, brute force, password spraying = red; suspicious login = blue (admin + viewer)
 - [x] Admin + Viewer dashboards, real backend session auth (not browser popup)
 - [x] Role-based access (viewer can't call block/unblock — 403 enforced server-side)
@@ -34,10 +36,11 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 - [x] Mobile-responsive, single-screen dashboards
 - [x] Demo attack-surface site: Home → Login → Search (real XSS target)
 - [x] ngrok tested for remote/mobile-data demo access
-- [x] GitHub repo set up, push workflow working
+- [x] GitHub repo set up, push workflow working (`gh` CLI installed in `~/.local/bin`, git uses it for credentials)
+- [x] README rewritten (current structure, ports, rules, `.env` setup, XSS demo payload)
 - [ ] Project report — old `docs/Micro-SIEM.docx` **deleted** (to be rewritten in a new format; full old text archived outside the repo, also in git history at `871bf4f`)
 - [ ] Presentation — old `docs/Micro-SIEM.pptx` **deleted** (to be rewritten; all 20 slides + speaker notes archived, also in git history at `871bf4f`)
-- [x] Viva guide — `docs/Micro-SIEM_Viva_Guide.pdf` (14 pages: all 12 APIs, token sessions, LAN access, OpenSearch, Vector, 26 likely faculty questions with answers, demo-day tips)
+- [x] Viva guide — `docs/Micro-SIEM_Viva_Guide.pdf` (14 pages) — **now outdated** in places: dashboards use `/api` on 8090 not `:8000`, passwords live in `.env`, detection is a background loop, brute force is per username, OpenSearch is localhost-only
 
 ## Disabled for Now (code kept, planned for a future version)
 
@@ -45,7 +48,11 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
   `BLOCKING_ENABLED = False` in `src/api/main.py`. Block/unblock endpoints return 503, so no
   firewall rule runs and no account gets locked. In the admin dashboard, "Execute IP Level Block",
   "Block User" and "Unblock" show a "Coming Soon" popup. Blocked panel kept (read-only list).
-  Re-enable: set flag to `True` + restore old button handlers in `admin.html` from git history.
+  Re-enable: set flag to `True` + restore old button handlers in `admin.html` from git history
+  (the Unblock buttons now use `data-unblock-type` / `data-target` attributes and a delegated
+  click listener, so wire the restored handlers into `unblockIp()` / `unblockAccount()`).
+  When enabled, blocks now go into both `INPUT` and `DOCKER-USER`, are re-applied on API
+  startup, and refuse loopback / own IP / Docker range (see S3, S6, F2 below).
 
 ## Removed from the Project
 
@@ -53,6 +60,7 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
   `vector/vector.toml`, `/var/log/auth.log` mount removed from `docker-compose.yml`, SSH
   brute-force rule removed from `main.py`, SSH wording removed from the admin sidebar and demo
   home page. Project now has 2 log sources (web login, Nginx). rsyslog no longer needed.
+- **Old report + presentation** — `docs/Micro-SIEM.docx` and `docs/Micro-SIEM.pptx` deleted (commit `46d2081`), pending rewrite.
 
 ---
 
@@ -64,7 +72,7 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 | Vector→OpenSearch bulk insert 400 error | OpenSearch 3.8 rejects old ES6 `_type` field | Added `api_version = "v8"` to Vector sink |
 | FastAPI querying `@timestamp` | Vector's real field is `timestamp` | Fixed queries |
 | VRL `merge()` fallible assignment error | Needs infallible form | Changed to `merge!()` |
-| Mobile logins showed same IP as local | Read `request.client.host` instead of `X-Forwarded-For` | Fixed header parsing |
+| Mobile logins showed same IP as local | Read `request.client.host` instead of `X-Forwarded-For` | Fixed header parsing (later hardened, see S1/S2) |
 | Chart.js "undefined" legend | No dataset label + legend shown on single-series chart | Added label, hid legend |
 | Donut chart overflowing panel | Flexbox `min-height: auto` default | `min-height: 0` down the flex chain + bounded canvas wrapper |
 | IP block failed on IPv6 address | `iptables` is IPv4-only, IPv6 needs `ip6tables` | Auto-detect via `ipaddress` module, pick right tool |
@@ -74,56 +82,57 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 | Duplicate alerts with two dashboards open (was D4) | Admin + viewer poll `/alerts` at the same moment; both runs pass the dedupe check before either write is searchable | New `_write_alert()`: deterministic doc ID (alert type + IP + 5-min window) written with `create()` (rejected if it exists) + `refresh="wait_for"`. Verified live: 2 concurrent dashboards for 30 s during an ongoing attack → exactly 1 alert per rule per IP |
 | `/alerts` and `/logs` HTTP 500 right after a fresh start (was F3) | `logs-index` only exists once Vector ships the first event; 3 log searches had no `ignore=[404]` | Added `ignore=[404]` + safe `.get()` access. Verified live: with the index deleted, both return 200 with empty lists |
 
+### Fixed in code — 2026-10-15 (offline-tested, NOT yet verified on the live Docker stack)
+
+Docker daemon was not running, so these were tested offline: the API ran against a fake
+OpenSearch client (all endpoint, rule, rate-limit, IP-trust and firewall-helper checks passed —
+note the test venv used pydantic 2.14 because 2.7.4 doesn't build on the host's Python 3.13;
+the Docker image still uses the pinned 2.7.4 on Python 3.11), dashboard JS was syntax-checked
+and `toIST`/`escapeHtml` tested in Node, both Nginx configs passed `nginx -t`, and
+`docker compose config` validated. **Still to do: full live run** (see Pending).
+
+| # | Bug | Fix |
+|---|---|---|
+| S1 | Stored XSS in admin dashboard via spoofed IP | API: new `get_client_ip()` trusts `X-Real-IP` only from Nginx (Docker range 172.16.0.0/12) or loopback, and only if it parses as an IP. Both Nginx configs replace (not append) `X-Real-IP`/`X-Forwarded-For` with `$remote_addr`. `admin.html`: every rendered field goes through `escapeHtml()`; no more `onclick="...'${value}'..."` strings (data attributes + delegated listeners) |
+| S2 | IP spoofing evades/frames detection | Nginx `realip` module: `X-Forwarded-For` believed only from `set_real_ip_from 172.16.0.0/12` / `127.0.0.1` (the host itself, e.g. ngrok agent), `real_ip_recursive on`. Remote clients can't fake their IP. Side effect: Nginx access-log `source_ip` is now the real client for ngrok traffic too, so XSS alerts are attributed correctly. Limitation: a LAN that itself uses 172.16.0.0/12 would be trusted |
+| S3 | IP block didn't stop web attackers | `_apply_firewall_block()` inserts the DROP rule into `INPUT` **and** `DOCKER-USER` (published container ports go through FORWARD → DOCKER-USER). Missing DOCKER-USER chain (e.g. ip6tables) is tolerated. Still true: ngrok traffic all arrives from the local agent, so IP blocking can't stop ngrok users |
+| S4 | Dashboard login brute-forceable | Passwords moved to env vars (`DASHBOARD_ADMIN_PASSWORD`, `DASHBOARD_VIEWER_PASSWORD`) read from git-ignored `.env` (`.env.example` committed; compose refuses to start without them). Constant-time compare. Rate limit: 5 failures per IP per 5 min → HTTP 429. Every attempt logged as `dashboard_login_success / _failed / _rate_limited`. Note: the old passwords are still in git history |
+| S5 | OpenSearch exposed with no auth | Ports 9200, 9600, 5601 bound to `127.0.0.1` in compose |
+| S6 | Loopback protection bypassable | `_parse_block_target()`: parses + normalises with `ipaddress` (`0:0::1` → `::1`, IPv4-mapped unwrapped), refuses loopback, unspecified, link-local, multicast, the machine's own primary IPv4/IPv6 and the Docker range |
+| S7 | `escapeHtml()` incomplete | Escapes `"` and `'` too, handles non-strings; blocked-list Unblock buttons use escaped data attributes |
+| D2 | Detection only ran while a dashboard was open | FastAPI `lifespan` starts `_detection_loop()`: runs all 4 rules every 5 s in a worker thread, logs and survives errors (e.g. OpenSearch still starting). `/alerts` now only reads alert history |
+| D5 | Big attacks under-counted (`size: 500`) | Brute force + spraying use `terms` aggregations (IP → username); correlation uses a `max` aggregation for each IP's last success + a `count` of earlier failures; XSS uses `helpers.scan()` to page through every request in the window |
+| D6 | Brute force also fired on password spraying (new, from code review) | Brute force counts failures per IP **and username**; alert records `target_username` |
+| D7 | URL-encoded XSS payloads mostly missed (new) | Browser sends `<img onerror=…>` as `%3Cimg%20onerror%3D…`; path is now URL-decoded (twice, for double encoding) before signature matching |
+| F1 | Nginx rows showed "Invalid Date", junk chart bucket | `toIST()` (admin + viewer) only appends `Z` when the timestamp has no zone; unparseable → `-` and skipped in the activity chart |
+| F2 | Blocklist drifted from real firewall | Unblock removes rules if present and **always** deletes the index record (no more stuck entries); on API startup, blocks from `blocked-index` are re-applied (only when blocking is enabled) |
+| F4 | Unbounded `limit` → 500 | `limit` on `/logs` and `/alerts` validated `1–1000` (422 otherwise) |
+| F5 | `demo_sessions` never expired | Demo sessions get an 8 h expiry checked in `/session-check`; expired dashboard + demo sessions pruned on each login |
+| I1 | `:latest` images + unversioned CDN | Pinned: OpenSearch + Dashboards `3.8.0`, Vector `0.59.0-alpine`, Nginx `1.30.6-alpine`, Tailwind `3.4.17`, Chart.js `4.5.1`. Note: Vector was `:latest` before, so 0.59.0 is untested with this config until the live run |
+| I2 | `depends_on` didn't wait for OpenSearch | `condition: service_healthy` on Vector, API and OpenSearch Dashboards |
+| I3 | Dashboards needed internet | Tailwind + Chart.js served from `react-dashboard/vendor/`. Google Fonts still from the internet — offline it falls back to system fonts (cosmetic only) |
+| I4 | Dashboards called `http://<host>:8000` directly (not ngrok-friendly) | react-dashboard Nginx proxies `/api/` → FastAPI; pages use same-origin `/api` (override still possible with `window.MICRO_SIEM_API_URL`). Only port 8090 needs to be exposed for the dashboards |
+| I5 | Vector had no persistent data dir | `data_dir = "/var/lib/vector"` + `vector-data` volume |
+| I6 | README stale | Rewritten |
+| I7 | Obsolete compose `version:` key | Removed |
+
 ---
 
-## Open Bugs (found in full code review — NOT fixed yet)
+## Open Bugs / Known Limitations
 
-Ordered by priority. None of these are fixed; this is the to-fix list.
-
-### Security (in the SIEM itself, not the intentional demo holes)
-
-| # | Bug | Where | Root Cause | Suggested Fix |
-|---|---|---|---|---|
-| S1 | Stored XSS in admin dashboard via spoofed IP | `main.py:149`, `nginx/default.conf:24`, `admin.html` threat + log tables | `source_ip` = first entry of client-controlled `X-Forwarded-For` (nginx `$proxy_add_x_forwarded_for` appends, doesn't replace). Admin renders `source_ip` unescaped via `innerHTML` and inside `onclick="openModal('...')"`. 5 failed logins with `X-Forwarded-For: <img src=x onerror=...>` → script runs in admin's browser, can read the session token and call `/block`/`/unblock` | Take IP from `X-Real-IP` (set by nginx to `$remote_addr`) and validate with `ipaddress`; escape every rendered field; stop building `onclick` strings from data |
-| S2 | IP spoofing evades/frames detection | same as S1 | Same spoofable header — attacker rotates a fake IP per request so the per-IP threshold never trips, or frames an innocent IP so admin blocks it | Same fix as S1 |
-| S3 | IP block doesn't stop web attackers | `main.py:535` | Rule goes in `INPUT`; Docker-published ports (8080/8090) are routed through `FORWARD`/`DOCKER-USER`, never `INPUT`. Only direct `:8000` and other host services are actually blocked. Local attacks show as Docker gateway IP; ngrok attacks come from the local ngrok agent | Also insert into `DOCKER-USER` chain, or honestly describe blocking as "host-level (API only)" |
-| S4 | Dashboard login brute-forceable | `main.py:83-86`, `/auth/login` | 4-digit hardcoded passwords committed to GitHub, no rate limit, SIEM doesn't log its own login attempts | Rate-limit + log `/auth/login` failures as a log source; move creds to env vars |
-| S5 | OpenSearch exposed with no auth | `docker-compose.yml` ports 9200/5601 | Security plugin disabled and ports published on all interfaces → anyone on the LAN can read/delete/forge logs, alerts, blocklist | Bind to `127.0.0.1:9200:9200` / `127.0.0.1:5601:5601` |
-| S6 | Loopback protection bypassable | `main.py:64, 520` | `NEVER_BLOCK_IPS` is exact string match — `0:0::1`, `127.0.0.2` pass | Use `ipaddress.ip_address(ip).is_loopback` (and protect own LAN IP) |
-| S7 | `escapeHtml()` incomplete | `admin.html` | Doesn't escape `"` / `'`; blocked-list `onclick` uses unescaped username | Escape quotes; use event listeners instead of inline `onclick` |
-
-### Detection correctness
-
-| # | Bug | Where | Root Cause | Suggested Fix |
-|---|---|---|---|---|
-| D2 | Detection only runs while a dashboard is open | `main.py:482` | Detection is triggered by `GET /alerts` polling. No dashboard open during attack + 2-min window passes = attack never detected. Two dashboards = double runs/races | Run `_run_detection()` in a background loop (FastAPI startup task) |
-| D5 | Big attacks under-counted | `main.py:323` | `size: 500` caps events per window | Use a `terms` aggregation on `source_ip` |
-
-### Functional / UI
-
-| # | Bug | Where | Root Cause | Suggested Fix |
-|---|---|---|---|---|
-| F1 | Nginx rows show "Invalid Date", junk chart bucket | `toIST()` in `admin.html` + `viewer.html` | Nginx `$time_iso8601` ends `+00:00`; code appends `Z` → `...+00:00Z` → unparseable | Only append `Z` if no timezone suffix present |
-| F2 | Blocklist drifts from real firewall | `main.py:553-570` | iptables rules don't survive reboot, but `blocked-index` record does. Unblock then fails on `iptables -D` → 500 before index cleanup → stuck entry | Delete index record even if rule missing; re-apply rules on API startup |
-| F4 | Unbounded `limit` → 500 | `/logs`, `/alerts` | >10000 exceeds `max_result_window` | Cap `limit` |
-| F5 | `demo_sessions` never expire | `main.py:80` | No TTL/cleanup | Add expiry like dashboard sessions |
-
-### Infra / demo-day risks
-
-- `:latest` images + unversioned `chart.js` CDN — a version jump already broke things once (`_type` bug). Pin versions before the viva.
-- `depends_on` doesn't wait for OpenSearch healthcheck (add `condition: service_healthy`).
-- Dashboards need internet (Tailwind play CDN, Chart.js, Google Fonts) — no internet at venue = broken UI.
-- Dashboards call `http://<host>:8000` directly — likely unreachable through ngrok (untested); the ngrok test probably only covered the demo site.
-- Vector has no persistent data dir → may skip lines after container recreate.
-- README is stale (mentions Streamlit/8501, missing React console on 8090).
+- Not a bug, but know it for the viva: browsers on the SIEM machine itself appear as the Docker gateway IP (e.g. `172.18.0.1`) in the logs, and can send a trusted `X-Forwarded-For` (they *are* the host).
+- In-memory sessions + rate-limit counters: restarting the API logs everyone out and resets the counters.
+- Old dashboard passwords (`2632`/`2000`) are in git history — change them in `.env` if the repo is public.
+- `search.html` is still intentionally XSS-vulnerable (demo target) — by design.
 
 ---
 
 ## Pending / Next Up
 
 ### High priority
-- [ ] Rewrite project report and presentation from scratch in the new format (old .docx/.pptx deleted) — must reflect SSH removal, 2 log sources, password-spraying rule, current 4 rules
-- [ ] Update viva guide + README for SSH removal + password-spraying rule
+- [ ] **Live verification of the 2026-10-15 fixes** on the Docker stack: `docker compose up --build`, then check: dashboards load via 8090 (incl. from a phone / ngrok), each of the 4 rules fires once, XSS alert shows the real client IP, Nginx rows show proper IST times, `X-Forwarded-For: <img…>` from another machine is ignored, dashboard login → 429 after 5 failures, OpenSearch unreachable from another PC on :9200
+- [ ] Rewrite project report and presentation from scratch in the new format (old .docx/.pptx deleted) — must reflect SSH removal, 2 log sources, password-spraying rule, current 4 rules, and the 2026-10-15 fixes (background detection, per-username brute force, IP trust, rate limiting, `.env`)
+- [ ] Update viva guide for SSH removal, password-spraying rule and the 2026-10-15 changes
 - [ ] Formal Detection Playbooks (one write-up per rule)
 - [ ] Incident Verification Reports (proof-of-detection per rule: screenshot, timestamp, resolution)
 - [ ] Full live-demo rehearsal, timed, in the exact order for faculty
@@ -149,4 +158,4 @@ Ordered by priority. None of these are fixed; this is the to-fix list.
 
 ---
 
-*Last updated: old report (`Micro-SIEM.docx`) and presentation (`Micro-SIEM.pptx`) deleted, pending rewrite in a new format; `.git` ownership issue confirmed resolved. Earlier: SSH fully removed; password-spraying rule (T1110.003) added; bugs D1, D4, F3 fixed and verified live.*
+*Last updated 2026-10-15: fixed all open bugs S1–S7, D2, D5, F1, F2, F4, F5, all infra/demo-day risks, plus new D6 (brute force per username) and D7 (URL-decoded XSS matching); README rewritten; `.env`/`.env.example`/`.gitignore` added; Tailwind + Chart.js vendored. Offline-tested only — live Docker verification pending. Earlier: old report + presentation deleted; SSH removed; password-spraying rule added; D1, D4, F3 fixed and verified live.*
