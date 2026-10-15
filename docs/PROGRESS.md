@@ -35,8 +35,8 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 - [x] Demo attack-surface site: Home → Login → Search (real XSS target)
 - [x] ngrok tested for remote/mobile-data demo access
 - [x] GitHub repo set up, push workflow working
-- [x] Project report — `docs/Micro-SIEM.docx` (45 pages, college format from `PROJECT_FINAL_INDEX.docx`); all 8 diagrams and 13 screenshots in place (screenshots cropped to page content), index page numbers updated; still needs student name/enrollment/guide filled
-- [x] Presentation — `docs/Micro-SIEM.pptx` (20 slides, speaker notes); real screenshots on slides 13–15; still needs student name/enrollment/guide filled
+- [ ] Project report — old `docs/Micro-SIEM.docx` **deleted** (to be rewritten in a new format; full old text archived outside the repo, also in git history at `871bf4f`)
+- [ ] Presentation — old `docs/Micro-SIEM.pptx` **deleted** (to be rewritten; all 20 slides + speaker notes archived, also in git history at `871bf4f`)
 - [x] Viva guide — `docs/Micro-SIEM_Viva_Guide.pdf` (14 pages: all 12 APIs, token sessions, LAN access, OpenSearch, Vector, 26 likely faculty questions with answers, demo-day tips)
 
 ## Disabled for Now (code kept, planned for a future version)
@@ -116,14 +116,14 @@ Ordered by priority. None of these are fixed; this is the to-fix list.
 - Dashboards call `http://<host>:8000` directly — likely unreachable through ngrok (untested); the ngrok test probably only covered the demo site.
 - Vector has no persistent data dir → may skip lines after container recreate.
 - README is stale (mentions Streamlit/8501, missing React console on 8090).
-- `.git` owned by root ("dubious ownership" error) — fix with `sudo chown -R $USER .git`.
 
 ---
 
 ## Pending / Next Up
 
 ### High priority
-- [ ] Update documents for SSH removal + password-spraying rule (deferred to the end by user): report ("4 rules" → rules table, 3 → 2 log sources, test cases, future scope), slides 3/7/8/10/18, viva guide, README
+- [ ] Rewrite project report and presentation from scratch in the new format (old .docx/.pptx deleted) — must reflect SSH removal, 2 log sources, password-spraying rule, current 4 rules
+- [ ] Update viva guide + README for SSH removal + password-spraying rule
 - [ ] Formal Detection Playbooks (one write-up per rule)
 - [ ] Incident Verification Reports (proof-of-detection per rule: screenshot, timestamp, resolution)
 - [ ] Full live-demo rehearsal, timed, in the exact order for faculty
@@ -142,10 +142,11 @@ Ordered by priority. None of these are fixed; this is the to-fix list.
 ## Working Rules (for continuing this project)
 
 - **Never build/edit/create files unless explicitly told to build.** Discuss and plan freely otherwise.
+- **Every file change (edit, create, delete) must also be recorded in this PROGRESS.md in the same pass.**
 - Honest, direct opinions — no sugarcoating, push back when something's a bad idea.
 - Explain logic/reasoning, not just working code.
 - Realistic, defensible scope matters more than feature count — every addition should survive a viva question.
 
 ---
 
-*Last updated: SSH fully removed; password-spraying rule (T1110.003) added; bugs D1 (alert spam), D4 (concurrent duplicate alerts) and F3 (500 on fresh start) fixed and verified live; documents not yet updated for these changes.*
+*Last updated: old report (`Micro-SIEM.docx`) and presentation (`Micro-SIEM.pptx`) deleted, pending rewrite in a new format; `.git` ownership issue confirmed resolved. Earlier: SSH fully removed; password-spraying rule (T1110.003) added; bugs D1, D4, F3 fixed and verified live.*
