@@ -66,6 +66,12 @@ SPRAY_WINDOW_MINUTES = 5        # ...within this many minutes = alert
 # while an attack is still ongoing.
 ALERT_DEDUPE_MINUTES = 5
 
+# Login events the brute-force and spraying rules count as password guesses.
+# An attempt on a blocked account is refused before the password is even
+# checked, but it is still an attacker guessing - without login_blocked here,
+# hammering a blocked account would raise no alert at all.
+GUESS_EVENTS = ("login_failed", "login_blocked")
+
 # Detection runs on its own every few seconds (see _detection_loop), so an
 # attack is caught even when nobody has a dashboard open.
 DETECTION_INTERVAL_SECONDS = 5
@@ -468,12 +474,12 @@ def _write_alert(alert: dict):
         pass  # another detection run already wrote this alert
 
 
-def _failed_logins_since(since: datetime) -> dict:
-    """Query clause: failed demo web logins at or after `since`."""
+def _failed_logins_since(since: datetime, events=("login_failed",)) -> dict:
+    """Query clause: demo web logins with one of `events` at or after `since`."""
     return {
         "bool": {
             "filter": [
-                {"term": {"event.keyword": "login_failed"}},
+                {"terms": {"event.keyword": list(events)}},
                 {"range": {"timestamp": {"gte": since.isoformat()}}},
             ]
         }
@@ -506,6 +512,7 @@ def _run_brute_force_rule():
     against the same username within TIME_WINDOW_MINUTES, raise an alert.
     Counting per username (not just per IP) keeps this separate from
     password spraying, where each account only gets one or two tries.
+    Attempts on a blocked account count too (GUESS_EVENTS).
 
     Uses an aggregation (count per IP, then per username) so OpenSearch does
     the counting - no cap on how many events a big attack can have.
@@ -513,7 +520,7 @@ def _run_brute_force_rule():
     since = datetime.utcnow() - timedelta(minutes=TIME_WINDOW_MINUTES)
     query = {
         "size": 0,
-        "query": _failed_logins_since(since),
+        "query": _failed_logins_since(since, GUESS_EVENTS),
         "aggs": {
             "by_ip": {
                 "terms": {"field": "source_ip.keyword", "size": AGG_BUCKET_LIMIT},
@@ -705,11 +712,12 @@ def _run_password_spraying_rule():
     If one source IP has failed web logins against SPRAY_USERNAME_THRESHOLD
     or more DIFFERENT usernames within SPRAY_WINDOW_MINUTES, raise an alert.
     The key difference from brute force: count distinct usernames, not events.
+    Attempts on blocked accounts count too (GUESS_EVENTS).
     """
     since = datetime.utcnow() - timedelta(minutes=SPRAY_WINDOW_MINUTES)
     query = {
         "size": 0,
-        "query": _failed_logins_since(since),
+        "query": _failed_logins_since(since, GUESS_EVENTS),
         "aggs": {
             "by_ip": {
                 "terms": {"field": "source_ip.keyword", "size": AGG_BUCKET_LIMIT},

@@ -40,8 +40,8 @@ Detection rules (`src/api/main.py`):
 
 | Rule | Logic | Mapping |
 |---|---|---|
-| Web login brute force | 5 failed logins on the **same username** from one IP within 2 min | MITRE T1110 |
-| Password spraying | failed logins on **3+ different usernames** from one IP within 5 min | MITRE T1110.003 |
+| Web login brute force | 5 failed logins on the **same username** from one IP within 2 min (attempts on blocked accounts count too) | MITRE T1110 |
+| Password spraying | failed logins on **3+ different usernames** from one IP within 5 min (attempts on blocked accounts count too) | MITRE T1110.003 |
 | Fail-then-success correlation | 2+ failures followed by a success from one IP within 2 min | MITRE T1078 |
 | XSS attempt | known payload signatures in the URL-decoded Nginx request path | OWASP / CWE-79 |
 
