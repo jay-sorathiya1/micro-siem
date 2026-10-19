@@ -394,7 +394,7 @@
                     <td class="text-slate-500">${escapeHtml(toIST(l.timestamp))}</td>
                     <td class="text-sky-500">${escapeHtml(l.log_type || '-')}</td>
                     <td class="text-slate-200">${escapeHtml(l.source_ip || '-')}</td>
-                    <td class="text-slate-400">${escapeHtml((l.message || l.event || '').toString().slice(0,80))}</td>
+                    <td class="text-slate-400">${escapeHtml(logDetail(l))}</td>
                 </tr>`).join('');
 
             // Threats table - grouped by IP, showing only the latest alert per IP
@@ -431,6 +431,23 @@
             const d = new Date(hasZone ? ts : ts + 'Z');
             if (isNaN(d)) return '-';
             return d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false });
+        }
+
+        // Short readable summary for the logs table instead of the raw JSON line.
+        // Nginx paths are shown URL-decoded, so an XSS payload is readable
+        // (it is still escaped by escapeHtml() before it reaches the page).
+        function logDetail(l) {
+            let text;
+            if (l.log_type === 'nginx_access') {
+                let path = l.path || '';
+                try { path = decodeURIComponent(path.replace(/\+/g, ' ')); } catch (e) {}
+                text = `${l.method || '?'} ${path} → ${l.status ?? '?'}`;
+            } else if (l.event) {
+                text = l.username !== undefined ? `${l.event} · user: ${l.username}` : l.event;
+            } else {
+                text = (l.message || '').toString();
+            }
+            return text.length > 90 ? text.slice(0, 89) + '…' : text;
         }
 
         // Safe for both element text and attribute values (quotes escaped too)
