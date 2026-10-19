@@ -38,9 +38,17 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 - [x] ngrok tested for remote/mobile-data demo access
 - [x] GitHub repo set up, push workflow working (`gh` CLI installed in `~/.local/bin`, git uses it for credentials)
 - [x] README rewritten (current structure, ports, rules, `.env` setup, XSS demo payload)
-- [ ] Project report — old `docs/Micro-SIEM.docx` **deleted** (to be rewritten in a new format; full old text archived outside the repo, also in git history at `871bf4f`)
+- [x] Project report — **`docs/Micro-SIEM_Project_Report.docx`** (+ `.pdf`), 51 pages, built 2026-10-19 from the college template `PROJECT_FINAL_INDEX.docx` following `docs/refrence report.pdf` (double page border, Times New Roman, title header, enrollment + page-number footer, 9 chapters in the index order, INDEX page numbers filled and verified). Content matches the current code (2 log sources, 4 rules incl. spraying, background detection, security fixes, live test results); new diagrams (use case, class, 3 activity, deployment, architecture, Gantt Jul–Oct 2026) and 15 fresh screenshots of the current app. Passes the docx schema validator. Team project: **Jay Sorathiya (243050601123)** and **Pratixa Rajodiya (243050601105)** — cover, certificate, self-declaration and acknowledgments adapted to two students ("we/us/our", two signature blocks), both enrollment numbers in every footer; front pages now use real page breaks instead of blank filler lines. Internal guide: **Prof. Vipul K. Chaudhari**. **All placeholders filled — ready for submission** (only the certificate date is left blank for the college to fill). To change any detail, edit `STUDENTS` / `GUIDE_NAME` at the top of `docs/report/build_report.py` and rebuild (two-pass, see `docs/report/`)
 - [ ] Presentation — old `docs/Micro-SIEM.pptx` **deleted** (to be rewritten; all 20 slides + speaker notes archived, also in git history at `871bf4f`)
-- [x] Viva guide — `docs/Micro-SIEM_Viva_Guide.pdf` (14 pages) — **now outdated** in places: dashboards use `/api` on 8090 not `:8000`, passwords live in `.env`, detection is a background loop, brute force is per username, OpenSearch is localhost-only
+- [ ] Viva guide — `docs/Micro-SIEM_Viva_Guide.pdf` and `docs/Micro-SIEM_Image_Prompts.pdf` **deleted by the user** (2026-10-19, not yet committed); old guide was outdated anyway
+
+## Project Report Sources (`docs/report/`)
+
+- `build_report.py` — builds the report from `template_merged.docx` (the college template with split text runs merged); personal details at the top
+- `index_pages.py` — reads the rendered PDF and returns the page number of every INDEX entry (pass 2 writes them into the INDEX)
+- `diagrams.py` — regenerates `diagrams/` (Graphviz + Matplotlib); `screenshots/` — headless-Chromium captures of the live stack (2026-10-19)
+- Rebuild: `python3 docs/report/build_report.py /tmp/p1.docx && soffice --headless --convert-to pdf --outdir /tmp /tmp/p1.docx && python3 docs/report/index_pages.py /tmp/p1.pdf /tmp/pages.json && python3 docs/report/build_report.py docs/Micro-SIEM_Project_Report.docx /tmp/pages.json && soffice --headless --convert-to pdf --outdir docs docs/Micro-SIEM_Project_Report.docx` (needs python-docx, Pillow, LibreOffice, poppler-utils)
+- `tests/detect_demo.sh` — live detection test shown in the report (Figure 6.15); run with the stack up
 
 ## Disabled for Now (code kept, planned for a future version)
 
@@ -145,8 +153,11 @@ and `toIST`/`escapeHtml` tested in Node, both Nginx configs passed `nginx -t`, a
 ### High priority
 - [x] Live verification of the 2026-10-15 fixes on the Docker stack — 34/35 checks passed (details under "Fixed 2026-10-15")
 - [ ] From a phone on the same Wi-Fi: open `http://<PC-IP>:8080`, make a failed login, confirm the log shows the phone's own IP; also open the dashboards on `http://<PC-IP>:8090` (and via ngrok) and check they render
-- [ ] Rewrite project report and presentation from scratch in the new format (old .docx/.pptx deleted) — must reflect SSH removal, 2 log sources, password-spraying rule, current 4 rules, and the 2026-10-15 fixes (background detection, per-username brute force, IP trust, rate limiting, `.env`)
-- [ ] Update viva guide for SSH removal, password-spraying rule and the 2026-10-15 changes
+- [x] Rewrite project report in the new format — done (see Status)
+- [x] Student names + enrollment numbers filled in (team of two)
+- [x] Internal guide name filled in (Prof. Vipul K. Chaudhari)
+- [ ] Rewrite the presentation (old .pptx deleted) — can reuse the report's diagrams and screenshots in `docs/report/`
+- [ ] New viva guide if wanted (old one deleted)
 - [ ] Formal Detection Playbooks (one write-up per rule)
 - [ ] Incident Verification Reports (proof-of-detection per rule: screenshot, timestamp, resolution)
 - [ ] Full live-demo rehearsal, timed, in the exact order for faculty
@@ -172,4 +183,4 @@ and `toIST`/`escapeHtml` tested in Node, both Nginx configs passed `nginx -t`, a
 
 ---
 
-*Last updated 2026-10-19: F6 fixed — readable logs "Detail" column (verified in browser). 2026-10-15: D8 fixed — brute force + spraying now also count `login_blocked` attempts (verified live 7/7). Before that: fixed all open bugs S1–S7, D2, D5, F1, F2, F4, F5, all infra/demo-day risks, plus new D6 (brute force per username) and D7 (URL-decoded XSS matching); README rewritten; `.env`/`.env.example`/`.gitignore` added; Tailwind + Chart.js vendored. Verified live on Docker (34/35; LAN-spoof check needs a phone test). Earlier: old report + presentation deleted; SSH removed; password-spraying rule added; D1, D4, F3 fixed and verified live.*
+*Last updated 2026-10-19: final project report created (`docs/Micro-SIEM_Project_Report.docx/.pdf`, sources in `docs/report/`, live detection test script `tests/detect_demo.sh`); students filled in (Jay Sorathiya 243050601123, Pratixa Rajodiya 243050601105), guide Prof. Vipul K. Chaudhari — report complete. Also 2026-10-19: F6 fixed — readable logs "Detail" column (verified in browser). 2026-10-15: D8 fixed — brute force + spraying now also count `login_blocked` attempts (verified live 7/7). Before that: fixed all open bugs S1–S7, D2, D5, F1, F2, F4, F5, all infra/demo-day risks, plus new D6 (brute force per username) and D7 (URL-decoded XSS matching); README rewritten; `.env`/`.env.example`/`.gitignore` added; Tailwind + Chart.js vendored. Verified live on Docker (34/35; LAN-spoof check needs a phone test). Earlier: old report + presentation deleted; SSH removed; password-spraying rule added; D1, D4, F3 fixed and verified live.*
