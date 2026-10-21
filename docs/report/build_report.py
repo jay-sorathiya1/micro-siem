@@ -447,7 +447,7 @@ def fix_widths(t, widths):
     t.autofit = False
 
 FIG = {"n": {}}
-def figure(path, caption, chap, max_w=6.0, max_h=7.9, border=True):
+def figure(path, caption, chap, max_w=TEXT_W, max_h=7.9, border=True):
     im = Image.open(path); w, h = im.size
     scale = min(max_w / (w / 96), max_h / (h / 96), 1e9)
     wi = min(max_w, max_h * w / h)
@@ -735,7 +735,7 @@ numbered(["**Generate** – The demo portal and Nginx write one JSON line per ev
           "**Store & index** – OpenSearch makes every event searchable within about a second.",
           "**Detect** – The detection engine queries recent events every 5 seconds and evaluates four rules.",
           "**Present & respond** – Alerts appear on the dashboards, where the admin can analyse them."])
-figure(f"{DIAG}/architecture.png", "Micro-SIEM Data Flow Architecture", 3, max_w=6.2, max_h=5.0)
+figure(f"{DIAG}/architecture.png", "Micro-SIEM Data Flow Architecture", 3, max_h=5.2)
 
 section("3.2", "Scope of the System")
 para("The scope defines what Micro-SIEM covers in this version and what is intentionally left out.", indent_first=False)
@@ -929,7 +929,7 @@ table([
 
 section("4.4", "Time Line Chart", new_page=True)
 para("The project was planned over four months. The Gantt chart below shows the phases and sprints.", indent_first=False)
-figure(f"{DIAG}/gantt.png", "Project Time Line (Gantt) Chart", 4, max_w=6.2)
+figure(f"{DIAG}/gantt.png", "Project Time Line (Gantt) Chart", 4)
 
 # =========================================================================================
 # CHAPTER 5
@@ -937,7 +937,7 @@ figure(f"{DIAG}/gantt.png", "Project Time Line (Gantt) Chart", 4, max_w=6.2)
 chapter(5, "System Analysis & Design")
 section("5.1", "Use Case Diagram")
 para("The use case diagram shows the actors of Micro-SIEM and the functions each actor can perform.", indent_first=False)
-figure(f"{DIAG}/usecase.png", "Use Case Diagram of Micro-SIEM", 5, max_h=7.6)
+figure(f"{DIAG}/usecase.png", "Use Case Diagram of Micro-SIEM", 5, max_h=7.8)
 sub("Use Case Description")
 table([
     ["Use Case", "Actor", "Description"],
@@ -957,23 +957,25 @@ table([
 ], [1.9, 1.4, 2.9])
 
 section("5.2", "Class Diagram", new_page=True)
-para("The backend is a single FastAPI service. The class diagram shows its logical components: the API layer, the session "
-     "manager, the detection engine with its four rules, the firewall manager and the data objects stored in OpenSearch.",
+para("The backend is a single FastAPI service. Its class diagram is shown in two parts for readability: Figure 5.2 shows "
+     "the API layer with the session manager, detection engine, firewall manager and request models; Figure 5.3 shows the "
+     "detection engine with its four rules and the data objects stored in OpenSearch.",
      indent_first=False)
-figure(f"{DIAG}/class_rot.png", "Class Diagram of the Micro-SIEM Backend (rotated)", 5, max_w=6.25, max_h=8.1)
+figure(f"{DIAG}/class_core.png", "Class Diagram – API, Sessions, Firewall and Requests", 5, max_h=7.6)
+figure(f"{DIAG}/class_rules.png", "Class Diagram – Detection Engine, Rules and Data Objects", 5, max_h=7.6)
 
 section("5.3", "Activity Diagram", new_page=True)
 sub("5.3.1 Dashboard Login and Admin Activity")
-figure(f"{DIAG}/activity_admin.png", "Activity Diagram – Dashboard Login and Admin Console", 5, max_h=7.7)
+figure(f"{DIAG}/activity_admin.png", "Activity Diagram – Dashboard Login and Admin Console", 5, max_h=7.8)
 sub("5.3.2 Detection Engine Activity")
-figure(f"{DIAG}/activity_detection.png", "Activity Diagram – Detection Engine Cycle", 5, max_w=6.2)
+figure(f"{DIAG}/activity_detection.png", "Activity Diagram – Detection Engine Cycle", 5, max_h=7.6)
 sub("5.3.3 Demo User / Attacker Activity")
-figure(f"{DIAG}/activity_attacker.png", "Activity Diagram – Demo Portal Login and Attack Flow", 5, max_h=7.4)
+figure(f"{DIAG}/activity_attacker.png", "Activity Diagram – Demo Portal Login and Attack Flow", 5, max_h=7.6)
 
 section("5.4", "Deployment Diagram", new_page=True)
 para("Micro-SIEM is deployed as six Docker containers on one host. Only the demo portal (8080), the dashboards (8090) and "
      "the API (8000) are reachable from the network; OpenSearch and OpenSearch Dashboards are bound to 127.0.0.1.", indent_first=False)
-figure(f"{DIAG}/deployment.png", "Deployment Diagram of Micro-SIEM", 5, max_w=6.25)
+figure(f"{DIAG}/deployment.png", "Deployment Diagram of Micro-SIEM", 5, max_h=6.0)
 table([
     ["Container", "Image", "Port", "Role"],
     ["opensearch", "opensearchproject/opensearch:3.8.0", "127.0.0.1:9200", "Stores and indexes logs, alerts, blocklist"],
@@ -1066,10 +1068,14 @@ def js_fn(name):
 code(js_fn("toIST") + "\n" + js_fn("logDetail") + "\n" + js_fn("escapeHtml"), "M) admin.html – time conversion, readable log details and HTML escaping")
 
 sub("6.1.2 Screen Shots")
+SHOT_SIZE = {  # cropped screenshots are shown smaller than full-width ones
+    "08-admin-threats": dict(max_h=5.4), "09-admin-mitigation-modal": dict(max_w=4.6),
+    "10-admin-coming-soon": dict(max_w=4.2), "07-admin-logs": dict(max_h=5.0),
+}
 def shot(name, caption, title=None):
     if title:
         p = doc.add_paragraph(style=S_SUB); p.add_run(title)
-    figure(f"{SHOTS}/{name}.png", caption, 6, max_w=6.0)
+    figure(f"{SHOTS}/{name}.png", caption, 6, **SHOT_SIZE.get(name, {}))
 
 doc.add_paragraph(style=S_SUB).add_run("MODULE NAME – DEMO PORTAL (ATTACK TARGET)")
 shot("01-demo-home", "Demo Portal – Home Page (port 8080)")
