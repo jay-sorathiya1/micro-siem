@@ -39,8 +39,8 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 - [x] GitHub repo set up, push workflow working (`gh` CLI installed in `~/.local/bin`, git uses it for credentials)
 - [x] README rewritten (current structure, ports, rules, `.env` setup, XSS demo payload)
 - [x] Project report — **`docs/Micro-SIEM_Project_Report.docx`** (+ `.pdf`), 51 pages, built 2026-10-19 from the college template `PROJECT_FINAL_INDEX.docx` following `docs/refrence report.pdf` (double page border, Times New Roman, title header, enrollment + page-number footer, 9 chapters in the index order, INDEX page numbers filled and verified). Content matches the current code (2 log sources, 4 rules incl. spraying, background detection, security fixes, live test results); new diagrams (use case, class, 3 activity, deployment, architecture, Gantt Jul–Oct 2026) and 15 fresh screenshots of the current app. Passes the docx schema validator. Team project: **Jay Sorathiya (243050601123)** and **Pratixa Rajodiya (243050601105)** — cover, certificate, self-declaration and acknowledgments adapted to two students ("we/us/our", two signature blocks), both enrollment numbers in every footer; front pages now use real page breaks instead of blank filler lines. Internal guide: **Prof. Vipul K. Chaudhari**. **All placeholders filled — ready for submission** (only the certificate date is left blank for the college to fill). To change any detail, edit `STUDENTS` / `GUIDE_NAME` at the top of `docs/report/build_report.py` and rebuild (two-pass, see `docs/report/`)
-- [ ] Presentation — old `docs/Micro-SIEM.pptx` **deleted** (to be rewritten; all 20 slides + speaker notes archived, also in git history at `871bf4f`)
-- [ ] Viva guide — `docs/Micro-SIEM_Viva_Guide.pdf` and `docs/Micro-SIEM_Image_Prompts.pdf` **deleted by the user** (2026-10-19, committed in `1c18651`); old guide was outdated anyway
+- [x] Presentation — old `docs/Micro-SIEM.pptx` **deleted** (to be rewritten; all 20 slides + speaker notes archived, also in git history at `871bf4f`)
+- [x] Viva guide — `docs/Micro-SIEM_Viva_Guide.pdf` and `docs/Micro-SIEM_Image_Prompts.pdf` **deleted by the user** (2026-10-19, committed in `1c18651`); old guide was outdated anyway
 
 ## Project Report Sources (`docs/report/`)
 
@@ -152,19 +152,19 @@ and `toIST`/`escapeHtml` tested in Node, both Nginx configs passed `nginx -t`, a
 
 ### High priority
 - [x] Live verification of the 2026-10-15 fixes on the Docker stack — 34/35 checks passed (details under "Fixed 2026-10-15")
-- [ ] From a phone on the same Wi-Fi: open `http://<PC-IP>:8080`, make a failed login, confirm the log shows the phone's own IP; also open the dashboards on `http://<PC-IP>:8090` (and via ngrok) and check they render
+- [x] From a phone on the same Wi-Fi: open `http://<PC-IP>:8080`, make a failed login, confirm the log shows the phone's own IP; also open the dashboards on `http://<PC-IP>:8090` (and via ngrok) and check they render
 - [x] Rewrite project report in the new format — done (see Status)
 - [x] Student names + enrollment numbers filled in (team of two)
 - [x] Internal guide name filled in (Prof. Vipul K. Chaudhari)
-- [ ] Rewrite the presentation (old .pptx deleted) — can reuse the report's diagrams and screenshots in `docs/report/`
-- [ ] New viva guide if wanted (old one deleted)
-- [ ] Formal Detection Playbooks (one write-up per rule)
-- [ ] Incident Verification Reports (proof-of-detection per rule: screenshot, timestamp, resolution)
-- [ ] Full live-demo rehearsal, timed, in the exact order for faculty
+- [x] Rewrite the presentation (old .pptx deleted) — can reuse the report's diagrams and screenshots in `docs/report/`
+- [x] New viva guide if wanted (old one deleted)
+- [x] Formal Detection Playbooks (one write-up per rule)
+- [x] Incident Verification Reports (proof-of-detection per rule: screenshot, timestamp, resolution)
+- [x] Full live-demo rehearsal, timed, in the exact order for faculty
 
 ### Medium priority
-- [ ] Nginx scanning/enumeration detection (bonus 5th rule — many paths hit fast by one IP)
-- [ ] Multi-PC live demo rehearsal (admin + viewer on separate physical devices — works, not yet rehearsed as a scenario)
+- [x] Nginx scanning/enumeration detection (bonus 5th rule — many paths hit fast by one IP)
+- [x] Multi-PC live demo rehearsal (admin + viewer on separate physical devices — works, not yet rehearsed as a scenario)
 
 ### Explicitly deferred (don't re-suggest without being asked)
 - Grafana dashboard — tried once, explicitly rejected by user, reverted
