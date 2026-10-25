@@ -6,6 +6,33 @@ edit, but anything worth remembering for the report or viva.
 
 ---
 
+## ▶ START HERE — every new session / new device (read first)
+
+**For Claude (or anyone) picking this project up:** read this whole file before doing anything, then run these checks.
+
+1. **Sync with GitHub:** `git pull` then `git status -sb` — must say `## master...origin/master` with nothing uncommitted.
+2. **`.env` must exist** in the repo root (it is git-ignored, never on GitHub). If missing, ask the user to copy it from the
+   old device or create it from `.env.example` — never invent passwords and never commit `.env`.
+3. **Docker access:** `docker ps` must work without sudo (user in `docker` group). If not, ask the user to run
+   `sudo usermod -aG docker $USER` and log out/in (sudo needs the user's password — Claude cannot run it).
+4. **GitHub push access:** `gh auth status` must show logged in; if not, ask the user to run `gh auth login` then
+   `gh auth setup-git` (interactive, user must do it).
+5. **Git identity for commits:** `jay-sorathiya1 <jaysorathiya911@gmail.com>` (use `git -c user.name=... -c user.email=...`
+   if no global config is set).
+6. **Know the real state:** read "Where things stand" in the handover section below — some checkboxes in this file were
+   ticked on request even though that work does not exist yet (presentation, viva guide, playbooks, phone test, ...).
+
+**Rules that always apply (from the user):**
+- **Only edit/create/delete files when the user asks to build/fix/add something.** Analysing, checking and planning are always fine.
+- **Every file change must also be recorded in this PROGRESS.md in the same pass** (status lists, bug tables, pending items, "Last updated" line).
+- **Commit and push only when the user asks** ("push it"). After pushing, confirm with `git fetch` + `git status -sb`.
+- **Verify before claiming done:** run the stack / tests / render the report and say honestly what was and was not tested.
+- **Report changes** go through `docs/report/build_report.py` (two-pass rebuild, see "Project Report Sources") — never hand-edit the .docx.
+- **Leave the stack the way you found it** (if it was down, `docker compose down` when finished).
+- Full working rules are at the end of this file.
+
+---
+
 ## Moving to a New Device (handover, 2026-10-25)
 
 Everything needed is in this GitHub repo **except the `.env` file** (git-ignored on purpose).
@@ -229,4 +256,4 @@ and `toIST`/`escapeHtml` tested in Node, both Nginx configs passed `nginx -t`, a
 
 ---
 
-*Last updated 2026-10-25: device handover section added; offline API test moved into `tests/test_api_offline.py`. 2026-10-21: report images made readable (larger diagram text, high-resolution cropped screenshots; 54 pages). 2026-10-19: final project report created (`docs/Micro-SIEM_Project_Report.docx/.pdf`, sources in `docs/report/`, live detection test script `tests/detect_demo.sh`); students filled in (Jay Sorathiya 243050601123, Pratixa Rajodiya 243050601105), guide Prof. Vipul K. Chaudhari — report complete. Also 2026-10-19: F6 fixed — readable logs "Detail" column (verified in browser). 2026-10-15: D8 fixed — brute force + spraying now also count `login_blocked` attempts (verified live 7/7). Before that: fixed all open bugs S1–S7, D2, D5, F1, F2, F4, F5, all infra/demo-day risks, plus new D6 (brute force per username) and D7 (URL-decoded XSS matching); README rewritten; `.env`/`.env.example`/`.gitignore` added; Tailwind + Chart.js vendored. Verified live on Docker (34/35; LAN-spoof check needs a phone test). Earlier: old report + presentation deleted; SSH removed; password-spraying rule added; D1, D4, F3 fixed and verified live.*
+*Last updated 2026-10-25: "START HERE" checklist + device handover section added; offline API test moved into `tests/test_api_offline.py`. 2026-10-21: report images made readable (larger diagram text, high-resolution cropped screenshots; 54 pages). 2026-10-19: final project report created (`docs/Micro-SIEM_Project_Report.docx/.pdf`, sources in `docs/report/`, live detection test script `tests/detect_demo.sh`); students filled in (Jay Sorathiya 243050601123, Pratixa Rajodiya 243050601105), guide Prof. Vipul K. Chaudhari — report complete. Also 2026-10-19: F6 fixed — readable logs "Detail" column (verified in browser). 2026-10-15: D8 fixed — brute force + spraying now also count `login_blocked` attempts (verified live 7/7). Before that: fixed all open bugs S1–S7, D2, D5, F1, F2, F4, F5, all infra/demo-day risks, plus new D6 (brute force per username) and D7 (URL-decoded XSS matching); README rewritten; `.env`/`.env.example`/`.gitignore` added; Tailwind + Chart.js vendored. Verified live on Docker (34/35; LAN-spoof check needs a phone test). Earlier: old report + presentation deleted; SSH removed; password-spraying rule added; D1, D4, F3 fixed and verified live.*
