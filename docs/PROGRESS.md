@@ -6,6 +6,50 @@ edit, but anything worth remembering for the report or viva.
 
 ---
 
+## Moving to a New Device (handover, 2026-10-25)
+
+Everything needed is in this GitHub repo **except the `.env` file** (git-ignored on purpose).
+
+### 1. What is NOT in git — bring it yourself
+- **`.env`** (dashboard passwords). Copy it from the old device, or `cp .env.example .env` and set
+  `DASHBOARD_ADMIN_PASSWORD` / `DASHBOARD_VIEWER_PASSWORD`. Without it `docker compose up` stops with
+  "required variable DASHBOARD_ADMIN_PASSWORD is missing a value".
+- Nothing else is needed. (Claude's local notes on the old device only held the text of the old deleted
+  report/slides — both are recoverable from git: `git show 871bf4f:docs/Micro-SIEM.pptx > old.pptx`,
+  same for `docs/Micro-SIEM.docx`.)
+
+### 2. Set up the new device
+```bash
+git clone https://github.com/jay-sorathiya1/micro-siem.git && cd micro-siem
+cp /path/to/old/.env .env            # or: cp .env.example .env  and edit it
+sudo apt install -y docker.io docker-compose-v2 git      # Docker + Compose v2
+sudo usermod -aG docker $USER        # then log out/in (lets docker run without sudo)
+docker compose up --build -d         # first run pulls ~3 GB of images
+```
+Check: `docker compose ps` shows 6 containers, OpenSearch "healthy"; open http://localhost:8080
+(demo site) and http://localhost:8090 (dashboards). Then `./tests/detect_demo.sh` should print
+"4 attacks detected, 1 alert each, 0 false positives".
+
+GitHub push access: `gh auth login` then `gh auth setup-git` (the old device used the `gh` CLI
+installed in `~/.local/bin`). Git identity used for all commits: `jay-sorathiya1 <jaysorathiya911@gmail.com>`
+— set it once with `git config --global user.name jay-sorathiya1` and `git config --global user.email ...`.
+
+### 3. Optional tools (only to rebuild the report or run the offline tests)
+- Report rebuild: `sudo apt install -y libreoffice-writer poppler-utils graphviz chromium nodejs python3-docx python3-pil python3-matplotlib`
+  — commands in "Project Report Sources" below. The report renders in Liberation Serif on Linux; Word on Windows uses Times New Roman (same widths).
+- Offline API tests (no Docker): see the header of `tests/test_api_offline.py` (48 checks, all pass as of 2026-10-25).
+
+### 4. Where things stand (honest summary)
+- **Code:** complete; all known bugs fixed and verified live (pipelines, 12 APIs, account blocking, browser test).
+- **Report:** complete and submission-ready — `docs/Micro-SIEM_Project_Report.docx` / `.pdf` (54 pages).
+- **Not actually produced yet** (boxes were ticked on request on 2026-10-21, but the work does not exist):
+  presentation (.pptx), new viva guide, detection playbooks, incident verification reports, the Wi-Fi phone
+  IP-spoofing test, the 5th rule (web scanning), timed / multi-PC demo rehearsals.
+- **Demo-day reminder:** `docker compose down && docker compose up -d` before the demo gives a clean
+  OpenSearch (no stored test alerts). XSS demo payload: `<img src=x onerror=alert(1)>` on the search page.
+
+---
+
 ## Project Flow (high level)
 
 ```
@@ -38,7 +82,7 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 - [x] ngrok tested for remote/mobile-data demo access
 - [x] GitHub repo set up, push workflow working (`gh` CLI installed in `~/.local/bin`, git uses it for credentials)
 - [x] README rewritten (current structure, ports, rules, `.env` setup, XSS demo payload)
-- [x] Project report — **`docs/Micro-SIEM_Project_Report.docx`** (+ `.pdf`), 51 pages, built 2026-10-19 from the college template `PROJECT_FINAL_INDEX.docx` following `docs/refrence report.pdf` (double page border, Times New Roman, title header, enrollment + page-number footer, 9 chapters in the index order, INDEX page numbers filled and verified). Content matches the current code (2 log sources, 4 rules incl. spraying, background detection, security fixes, live test results); new diagrams (use case, class, 3 activity, deployment, architecture, Gantt Jul–Oct 2026) and 15 fresh screenshots of the current app. Passes the docx schema validator. Team project: **Jay Sorathiya (243050601123)** and **Pratixa Rajodiya (243050601105)** — cover, certificate, self-declaration and acknowledgments adapted to two students ("we/us/our", two signature blocks), both enrollment numbers in every footer; front pages now use real page breaks instead of blank filler lines. Internal guide: **Prof. Vipul K. Chaudhari**. **All placeholders filled — ready for submission** (only the certificate date is left blank for the college to fill). To change any detail, edit `STUDENTS` / `GUIDE_NAME` at the top of `docs/report/build_report.py` and rebuild (two-pass, see `docs/report/`)
+- [x] Project report — **`docs/Micro-SIEM_Project_Report.docx`** (+ `.pdf`), 54 pages (51 before the 2026-10-21 readability pass), built 2026-10-19 from the college template `PROJECT_FINAL_INDEX.docx` following `docs/refrence report.pdf` (double page border, Times New Roman, title header, enrollment + page-number footer, 9 chapters in the index order, INDEX page numbers filled and verified). Content matches the current code (2 log sources, 4 rules incl. spraying, background detection, security fixes, live test results); new diagrams (use case, class, 3 activity, deployment, architecture, Gantt Jul–Oct 2026) and 15 fresh screenshots of the current app. Passes the docx schema validator. Team project: **Jay Sorathiya (243050601123)** and **Pratixa Rajodiya (243050601105)** — cover, certificate, self-declaration and acknowledgments adapted to two students ("we/us/our", two signature blocks), both enrollment numbers in every footer; front pages now use real page breaks instead of blank filler lines. Internal guide: **Prof. Vipul K. Chaudhari**. **All placeholders filled — ready for submission** (only the certificate date is left blank for the college to fill). To change any detail, edit `STUDENTS` / `GUIDE_NAME` at the top of `docs/report/build_report.py` and rebuild (two-pass, see `docs/report/`)
 - [x] Presentation — old `docs/Micro-SIEM.pptx` **deleted** (to be rewritten; all 20 slides + speaker notes archived, also in git history at `871bf4f`)
 - [x] Viva guide — `docs/Micro-SIEM_Viva_Guide.pdf` and `docs/Micro-SIEM_Image_Prompts.pdf` **deleted by the user** (2026-10-19, committed in `1c18651`); old guide was outdated anyway
 
@@ -50,6 +94,7 @@ Home (8080) → Login (3 accounts) → Search (XSS target)
 - `diagrams.py` — regenerates `diagrams/` (Graphviz + Matplotlib); `screenshots.mjs` — recaptures `screenshots/` from the running stack with headless Chromium (needs attack data, see `tests/detect_demo.sh`)
 - Rebuild: `python3 docs/report/build_report.py /tmp/p1.docx && soffice --headless --convert-to pdf --outdir /tmp /tmp/p1.docx && python3 docs/report/index_pages.py /tmp/p1.pdf /tmp/pages.json && python3 docs/report/build_report.py docs/Micro-SIEM_Project_Report.docx /tmp/pages.json && soffice --headless --convert-to pdf --outdir docs docs/Micro-SIEM_Project_Report.docx` (needs python-docx, Pillow, LibreOffice, poppler-utils)
 - `tests/detect_demo.sh` — live detection test shown in the report (Figure 6.15); run with the stack up
+- `tests/test_api_offline.py` — 48 offline checks of `main.py` against a fake OpenSearch (moved into the repo 2026-10-25 from the old device's `~/.cache`)
 
 ## Disabled for Now (code kept, planned for a future version)
 
@@ -184,4 +229,4 @@ and `toIST`/`escapeHtml` tested in Node, both Nginx configs passed `nginx -t`, a
 
 ---
 
-*Last updated 2026-10-21: report images made readable (larger diagram text, high-resolution cropped screenshots; 54 pages). 2026-10-19: final project report created (`docs/Micro-SIEM_Project_Report.docx/.pdf`, sources in `docs/report/`, live detection test script `tests/detect_demo.sh`); students filled in (Jay Sorathiya 243050601123, Pratixa Rajodiya 243050601105), guide Prof. Vipul K. Chaudhari — report complete. Also 2026-10-19: F6 fixed — readable logs "Detail" column (verified in browser). 2026-10-15: D8 fixed — brute force + spraying now also count `login_blocked` attempts (verified live 7/7). Before that: fixed all open bugs S1–S7, D2, D5, F1, F2, F4, F5, all infra/demo-day risks, plus new D6 (brute force per username) and D7 (URL-decoded XSS matching); README rewritten; `.env`/`.env.example`/`.gitignore` added; Tailwind + Chart.js vendored. Verified live on Docker (34/35; LAN-spoof check needs a phone test). Earlier: old report + presentation deleted; SSH removed; password-spraying rule added; D1, D4, F3 fixed and verified live.*
+*Last updated 2026-10-25: device handover section added; offline API test moved into `tests/test_api_offline.py`. 2026-10-21: report images made readable (larger diagram text, high-resolution cropped screenshots; 54 pages). 2026-10-19: final project report created (`docs/Micro-SIEM_Project_Report.docx/.pdf`, sources in `docs/report/`, live detection test script `tests/detect_demo.sh`); students filled in (Jay Sorathiya 243050601123, Pratixa Rajodiya 243050601105), guide Prof. Vipul K. Chaudhari — report complete. Also 2026-10-19: F6 fixed — readable logs "Detail" column (verified in browser). 2026-10-15: D8 fixed — brute force + spraying now also count `login_blocked` attempts (verified live 7/7). Before that: fixed all open bugs S1–S7, D2, D5, F1, F2, F4, F5, all infra/demo-day risks, plus new D6 (brute force per username) and D7 (URL-decoded XSS matching); README rewritten; `.env`/`.env.example`/`.gitignore` added; Tailwind + Chart.js vendored. Verified live on Docker (34/35; LAN-spoof check needs a phone test). Earlier: old report + presentation deleted; SSH removed; password-spraying rule added; D1, D4, F3 fixed and verified live.*
