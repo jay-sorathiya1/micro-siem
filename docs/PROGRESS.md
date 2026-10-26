@@ -53,6 +53,12 @@ sudo apt install -y docker.io docker-compose-v2 git      # Docker + Compose v2
 sudo usermod -aG docker $USER        # then log out/in (lets docker run without sudo)
 docker compose up --build -d         # first run pulls ~3 GB of images
 ```
+**On Kali Linux** (current device since 2026-10-27) the package names differ: Compose v2 is `docker-compose`
+(not `docker-compose-v2`) → `sudo apt install -y docker.io docker-compose`. `gh` is not in the Kali repos — install it
+from GitHub's apt repo (https://cli.github.com/packages); ngrok from its own apt repo
+(`https://ngrok-agent.s3.amazonaws.com`, then `ngrok config add-authtoken <token>`). If `docker ps` says
+"permission denied", the `usermod` didn't apply yet — check `getent group docker`, then log out/in.
+
 Check: `docker compose ps` shows 6 containers, OpenSearch "healthy"; open http://localhost:8080
 (demo site) and http://localhost:8090 (dashboards). Then `./tests/detect_demo.sh` should print
 "4 attacks detected, 1 alert each, 0 false positives".
@@ -256,4 +262,4 @@ and `toIST`/`escapeHtml` tested in Node, both Nginx configs passed `nginx -t`, a
 
 ---
 
-*Last updated 2026-10-25: "START HERE" checklist + device handover section added; offline API test moved into `tests/test_api_offline.py`. 2026-10-21: report images made readable (larger diagram text, high-resolution cropped screenshots; 54 pages). 2026-10-19: final project report created (`docs/Micro-SIEM_Project_Report.docx/.pdf`, sources in `docs/report/`, live detection test script `tests/detect_demo.sh`); students filled in (Jay Sorathiya 243050601123, Pratixa Rajodiya 243050601105), guide Prof. Vipul K. Chaudhari — report complete. Also 2026-10-19: F6 fixed — readable logs "Detail" column (verified in browser). 2026-10-15: D8 fixed — brute force + spraying now also count `login_blocked` attempts (verified live 7/7). Before that: fixed all open bugs S1–S7, D2, D5, F1, F2, F4, F5, all infra/demo-day risks, plus new D6 (brute force per username) and D7 (URL-decoded XSS matching); README rewritten; `.env`/`.env.example`/`.gitignore` added; Tailwind + Chart.js vendored. Verified live on Docker (34/35; LAN-spoof check needs a phone test). Earlier: old report + presentation deleted; SSH removed; password-spraying rule added; D1, D4, F3 fixed and verified live.*
+*Last updated 2026-10-27: moved to a new Kali Linux device — `.env` recreated, Docker 28.5.2 + Compose 2.40.3 and `gh` installed and logged in; Kali install notes added to the handover section (stack not yet run on this device — waiting on the `docker` group). 2026-10-25: "START HERE" checklist + device handover section added; offline API test moved into `tests/test_api_offline.py`. 2026-10-21: report images made readable (larger diagram text, high-resolution cropped screenshots; 54 pages). 2026-10-19: final project report created (`docs/Micro-SIEM_Project_Report.docx/.pdf`, sources in `docs/report/`, live detection test script `tests/detect_demo.sh`); students filled in (Jay Sorathiya 243050601123, Pratixa Rajodiya 243050601105), guide Prof. Vipul K. Chaudhari — report complete. Also 2026-10-19: F6 fixed — readable logs "Detail" column (verified in browser). 2026-10-15: D8 fixed — brute force + spraying now also count `login_blocked` attempts (verified live 7/7). Before that: fixed all open bugs S1–S7, D2, D5, F1, F2, F4, F5, all infra/demo-day risks, plus new D6 (brute force per username) and D7 (URL-decoded XSS matching); README rewritten; `.env`/`.env.example`/`.gitignore` added; Tailwind + Chart.js vendored. Verified live on Docker (34/35; LAN-spoof check needs a phone test). Earlier: old report + presentation deleted; SSH removed; password-spraying rule added; D1, D4, F3 fixed and verified live.*
