@@ -244,37 +244,36 @@ plt.rcParams["font.family"] = "serif"; plt.rcParams["font.serif"] = ["Liberation
 import matplotlib.dates as mdates
 from datetime import date
 
+# Spiral model: each cycle is one row of four consecutive quadrants (objectives -> risk analysis ->
+# develop & test -> evaluate & plan next), shown as coloured segments of the same bar.
+QUADS = [("Objectives & constraints", "#f4b183"), ("Risk analysis", "#e06666"),
+         ("Develop & test", "#9b72cf"), ("Evaluate & plan next", "#70ad47")]
+D = lambda m, d: date(2026, m, d)
 tasks = [
-    ("Requirement Analysis", None, None, None),
-    ("Study of SIEM concepts & tools", date(2026, 7, 1), date(2026, 7, 10), "#f4b183"),
-    ("Requirement gathering", date(2026, 7, 8), date(2026, 7, 16), "#f4b183"),
-    ("Define scope & detection rules", date(2026, 7, 14), date(2026, 7, 22), "#f4b183"),
-    ("Planning & Design", None, None, None),
-    ("Architecture & tool selection", date(2026, 7, 20), date(2026, 7, 31), "#70ad47"),
-    ("UML diagrams & index design", date(2026, 7, 28), date(2026, 8, 8), "#70ad47"),
-    ("Implementation", None, None, None),
-    ("Sprint 1: Docker, OpenSearch, Vector", date(2026, 8, 6), date(2026, 8, 20), "#9b72cf"),
-    ("Sprint 2: FastAPI + demo portal", date(2026, 8, 18), date(2026, 9, 3), "#9b72cf"),
-    ("Sprint 3: Detection rules + alerts", date(2026, 9, 1), date(2026, 9, 17), "#9b72cf"),
-    ("Sprint 4: Dashboards + auth (RBAC)", date(2026, 9, 10), date(2026, 9, 26), "#9b72cf"),
-    ("Sprint 5: Blocking module", date(2026, 9, 6), date(2026, 9, 14), "#9b72cf"),
-    ("Sprint 6: Security hardening", date(2026, 10, 5), date(2026, 10, 16), "#9b72cf"),
-    ("Testing", None, None, None),
-    ("Unit & integration testing", date(2026, 9, 20), date(2026, 10, 10), "#ffd966"),
-    ("Live end-to-end & UI testing", date(2026, 10, 12), date(2026, 10, 19), "#ffd966"),
-    ("Documentation", None, None, None),
-    ("Report, presentation & viva prep", date(2026, 10, 10), date(2026, 10, 31), "#5b9bd5"),
+    ("Spiral Cycles", None),
+    ("Cycle 1: Requirements & concept", [D(7, 1), D(7, 8), D(7, 14), D(7, 21), D(7, 24)]),
+    ("Cycle 2: Architecture & log pipeline", [D(7, 24), D(7, 28), D(8, 3), D(8, 17), D(8, 20)]),
+    ("Cycle 3: Backend & detection rules", [D(8, 20), D(8, 23), D(8, 28), D(9, 13), D(9, 17)]),
+    ("Cycle 4: Dashboards, auth & response", [D(9, 17), D(9, 19), D(9, 22), D(9, 30), D(10, 3)]),
+    ("Cycle 5: Security hardening & validation", [D(10, 3), D(10, 5), D(10, 8), D(10, 15), D(10, 19)]),
+    ("Documentation", None),
+    ("Report, presentation & viva prep", [D(10, 10), D(10, 31)]),
 ]
 GANTT_W = 7.0                       # figure width in inches (displayed at ~6.27")
-fig, ax = plt.subplots(figsize=(GANTT_W, 7.4), dpi=DPI)
+fig, ax = plt.subplots(figsize=(GANTT_W, 4.6), dpi=DPI)
 ys = list(range(len(tasks)))[::-1]
-for y, (name, s, e, col) in zip(ys, tasks):
-    if s is None:
+for y, (name, bounds) in zip(ys, tasks):
+    if bounds is None:
         ax.text(date(2026, 6, 30), y, name, va="center", ha="right", fontsize=11.5, fontweight="bold")
         ax.axhspan(y - 0.5, y + 0.5, color="#dbe5f1", zorder=0)
-    else:
+        continue
+    cols = [c for _, c in QUADS] if len(bounds) == 5 else ["#5b9bd5"]
+    for s, e, col in zip(bounds, bounds[1:], cols):
         ax.barh(y, (e - s).days, left=s, color=col, edgecolor="#404040", height=0.62, zorder=2)
-        ax.text(date(2026, 6, 30), y, name + "  ", va="center", ha="right", fontsize=11)
+    ax.text(date(2026, 6, 30), y, name + "  ", va="center", ha="right", fontsize=11)
+from matplotlib.patches import Patch
+ax.legend(handles=[Patch(facecolor=c, edgecolor="#404040", label=n) for n, c in QUADS],
+          loc="upper center", bbox_to_anchor=(0.35, -0.03), ncol=2, fontsize=11, frameon=False)
 ax.set_yticks([]); ax.set_ylim(-0.7, len(tasks) - 0.3)
 ax.set_xlim(date(2026, 7, 1), date(2026, 11, 1))
 ax.xaxis.set_major_locator(mdates.MonthLocator()); ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))

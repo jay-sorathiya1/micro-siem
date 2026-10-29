@@ -5,7 +5,7 @@ Build the Micro-SIEM final project report from the college template
 Usage: python3 docs/report/build_report.py <out.docx> [pages.json]
   pages.json (optional) = {"1.1": 3, ...} page numbers to write into the INDEX.
 """
-import copy, json, re, sys
+import copy, json, os, re, sys
 from docx import Document
 from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
@@ -25,9 +25,9 @@ STUDENT_NAME = None          # single-student fields - unused while STUDENTS is 
 ENROLLMENT = None
 # ================================================================================
 
-REPO = "/home/jay/micro-siem"
-HERE = f"{REPO}/docs/report"
-TEMPLATE = f"{HERE}/template_merged.docx"   # docs/PROJECT_FINAL_INDEX.docx with split text runs merged
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(HERE))   # works on any machine / clone location
+TEMPLATE = f"{HERE}/template_merged.docx"   # the college template (PROJECT_FINAL_INDEX.docx, removed from docs/ - in git history) with split text runs merged
 DIAG, SHOTS = f"{HERE}/diagrams", f"{HERE}/screenshots"
 OUT = sys.argv[1]
 PAGES = json.load(open(sys.argv[2])) if len(sys.argv) > 2 else {}
@@ -35,6 +35,10 @@ PAGES = json.load(open(sys.argv[2])) if len(sys.argv) > 2 else {}
 FONT = "Times New Roman"
 BLACK = RGBColor(0, 0, 0)
 RED = RGBColor(0xFF, 0, 0)
+# colour theme for the report body (front pages keep the college template's look)
+NAVY, BLUE, WHITE = "1F3864", "2E75B6", "FFFFFF"
+ROW_BAND, GRID = "EAF1FB", "8EAADB"
+PASS_GREEN = "2E7D32"
 STUDENT_TXT = ", ".join(f"{n} ({e})" for n, e in STUDENTS) if STUDENTS else (STUDENT_NAME or "Student Name")
 ENROLL_TXT = " / ".join(e for _, e in STUDENTS) if STUDENTS else (ENROLLMENT or "Enrollment No")
 ENROLL_KNOWN = bool(STUDENTS) or ENROLLMENT is not None
@@ -98,6 +102,21 @@ def fill_front_matter():
 
 fill_front_matter()
 
+def fix_template_fonts():
+    """A few template runs (cover "Academic Year", certificate "Date"/"Place") use the PostScript names
+    Times-Bold / Times-Roman, which no machine has installed - each renderer substitutes a different font
+    (DejaVu Serif, Noto Serif, ...) and a taller one pushes the certificate signatures onto a new page.
+    Use Times New Roman like the rest of the report."""
+    for rf in body.iter(qn("w:rFonts")):
+        name = rf.get(qn("w:ascii"))
+        if name in ("Times-Bold", "Times-Roman"):
+            for attr in ("w:ascii", "w:hAnsi", "w:cs"):
+                rf.set(qn(attr), "Times New Roman")
+            if name == "Times-Bold" and rf.getparent().find(qn("w:b")) is None:
+                rf.addnext(OxmlElement("w:b"))       # schema order: rFonts comes right before b
+
+fix_template_fonts()
+
 def fix_cover():
     """The cover has no page break - it is sized so the certificate starts where the cover runs out.
     The real title wraps to 2 lines, so drop 2 blank spacer lines above the bottom block and end the
@@ -159,14 +178,26 @@ def team_front_matter():
                     r.text = e1 + ")" + "".join(f" and {n} (enrollment no.: {e})" for n, e in rest); black(r)
                     r.bold = True
         if page in ("decl", "ack") and t == "Student Name":
+            # students side by side: a borderless table with one column per student (bold name, enrollment
+            # below), first student left-aligned, last right-aligned
             name_p, enr_p = par, paras[i + 1]
-            set_text(name_p, n1); set_text(enr_p, f"({e1})")
-            last = enr_p
-            for n, e in rest:   # copy the (bold) name line and the enrollment line for each extra student
-                el = copy.deepcopy(name_p._p); last._p.addnext(el)
-                q = Paragraph(el, name_p._parent); set_text(q, n); q.paragraph_format.space_before = Pt(14)
-                el2 = copy.deepcopy(enr_p._p); q._p.addnext(el2)
-                last = Paragraph(el2, enr_p._parent); set_text(last, f"({e})")
+            tbl = doc.add_table(rows=1, cols=len(STUDENTS))
+            enr_p._p.addnext(tbl._tbl)
+            tblpr = tbl._tbl.tblPr
+            borders = OxmlElement("w:tblBorders")
+            for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+                b = OxmlElement(f"w:{edge}"); b.set(qn("w:val"), "nil"); borders.append(b)
+            tblpr.append(borders)
+            col_w = Inches(6.27 / len(STUDENTS))
+            for k, (n, e) in enumerate(STUDENTS):
+                cell = tbl.rows[0].cells[k]; cell.width = col_w
+                cell._tc.remove(cell.paragraphs[0]._p)
+                for src, txt in ((name_p, n), (enr_p, f"({e})")):
+                    el = copy.deepcopy(src._p); cell._tc.append(el)
+                    q = Paragraph(el, cell); set_text(q, txt)
+                    q.paragraph_format.left_indent = None
+                    if k == len(STUDENTS) - 1 and k > 0: q.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            for p_ in (name_p, enr_p): p_._p.getparent().remove(p_._p)
             i += 2; continue
         if page == "decl":
             reword(par, [("I hereby declare", "We hereby declare"), ("carried out by me", "carried out by us")])
@@ -261,10 +292,10 @@ def east_asia(style_or_run_el, name=FONT):
     for a in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
         rfonts.set(qn(a), name)
 
-def mk_style(name, size, bold=False, align=None, before=0, after=6, outline=None, keep_next=False, italic=False):
+def mk_style(name, size, bold=False, align=None, before=0, after=6, outline=None, keep_next=False, italic=False, color=None):
     s = styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)
     s.base_style = styles["Normal"]
-    set_font(s.font, size, bold, italic)
+    set_font(s.font, size, bold, italic, color=RGBColor.from_string(color) if color else None)
     east_asia(s.element)
     pf = s.paragraph_format
     pf.space_before, pf.space_after = Pt(before), Pt(after)
@@ -277,14 +308,11 @@ def mk_style(name, size, bold=False, align=None, before=0, after=6, outline=None
 
 S_BODY = mk_style("Report Body", 12, align=WD_ALIGN_PARAGRAPH.JUSTIFY, after=6)
 S_BODY.paragraph_format.line_spacing = 1.15
-S_CH = mk_style("Report Chapter", 16, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=14, outline=0, keep_next=True)
+S_CH = mk_style("Report Chapter", 16, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=14, outline=0, keep_next=True, color=NAVY)
 S_SEC = mk_style("Report Section", 12, bold=True, before=10, after=8, outline=1, keep_next=True)
-S_SUB = mk_style("Report Sub", 12, bold=True, before=8, after=4, outline=2, keep_next=True)
-S_CAP = mk_style("Report Caption", 11, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, before=4, after=12)
+S_SUB = mk_style("Report Sub", 12, bold=True, before=8, after=4, outline=2, keep_next=True, color=BLUE)
+S_CAP = mk_style("Report Caption", 11, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, before=4, after=12, color=NAVY)
 S_CELL = mk_style("Report Cell", 11, after=0)
-S_CODE = mk_style("Report Code", 8.5, after=0)
-set_font(S_CODE.font, 8.5, name="Courier New"); east_asia(S_CODE.element, "Courier New")
-S_CODE.paragraph_format.line_spacing = 1.0
 S_BUL = mk_style("Report Bullet", 12, align=WD_ALIGN_PARAGRAPH.JUSTIFY, after=3)
 S_BUL.paragraph_format.line_spacing = 1.15
 
@@ -376,9 +404,10 @@ def shade(el_ppr_or_tcpr, fill):
 def section(num, title, new_page=False):
     p = doc.add_paragraph(style=S_SEC)
     if new_page: p.paragraph_format.page_break_before = True
-    shade(p._p.get_or_add_pPr(), "BFBFBF")
-    p.add_run(f"{num} ")
+    shade(p._p.get_or_add_pPr(), NAVY)
+    r0 = p.add_run(f"{num} ")
     r = p.add_run(title.upper()); r.underline = True
+    for r_ in (r0, r): r_.font.color.rgb = RGBColor.from_string(WHITE)
 
 def sub(text, arrow=False):
     p = doc.add_paragraph(style=S_SUB)
@@ -390,7 +419,7 @@ def page_break():
 
 TEXT_W = 6.27  # inches between margins
 
-def set_cell(cell, text, bold=False, fill=None, align=None, size=11, mono=False):
+def set_cell(cell, text, bold=False, fill=None, align=None, size=11, mono=False, color=None):
     cell.text = ""
     p = cell.paragraphs[0]; p.style = S_CELL
     if align is not None: p.alignment = align
@@ -400,17 +429,19 @@ def set_cell(cell, text, bold=False, fill=None, align=None, size=11, mono=False)
         add_runs(p, line, size=size, base_bold=bold)
         if mono:
             for r in p.runs: r.font.name = "Courier New"; r.font.size = Pt(9)
+        if color:
+            for r in p.runs: r.font.color.rgb = RGBColor.from_string(color)
     if fill: shade(cell._tc.get_or_add_tcPr(), fill)
     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
-def table(rows, widths, header=True, first_col_bold=False, header_fill="A6A6A6", size=11, center_cols=()):
+def table(rows, widths, header=True, first_col_bold=False, header_fill=NAVY, size=11, center_cols=()):
     t = doc.add_table(rows=len(rows), cols=len(widths))
     t.style = None
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
     tblpr = t._tbl.tblPr
     borders = OxmlElement("w:tblBorders")
     for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
-        e = OxmlElement(f"w:{edge}"); e.set(qn("w:val"), "single"); e.set(qn("w:sz"), "6"); e.set(qn("w:color"), "000000"); borders.append(e)
+        e = OxmlElement(f"w:{edge}"); e.set(qn("w:val"), "single"); e.set(qn("w:sz"), "6"); e.set(qn("w:color"), GRID); borders.append(e)
     tblpr.append(borders)
     cm = OxmlElement("w:tblCellMar")
     for side, v in (("top", 30), ("left", 90), ("bottom", 30), ("right", 90)):
@@ -421,8 +452,12 @@ def table(rows, widths, header=True, first_col_bold=False, header_fill="A6A6A6",
         for ci, val in enumerate(row):
             c = t.cell(ri, ci); c.width = Inches(widths[ci])
             is_head = header and ri == 0
-            set_cell(c, str(val), bold=is_head or (first_col_bold and ci == 0), fill=header_fill if is_head else None,
-                     size=size, align=WD_ALIGN_PARAGRAPH.CENTER if (ci in center_cols and not is_head) else None)
+            is_pass = not is_head and str(val) == "Pass"
+            band = ROW_BAND if (not is_head and (ri - header) % 2 == 1) else None
+            set_cell(c, str(val), bold=is_head or is_pass or (first_col_bold and ci == 0),
+                     fill=header_fill if is_head else band, size=size,
+                     color=WHITE if is_head else (PASS_GREEN if is_pass else None),
+                     align=WD_ALIGN_PARAGRAPH.CENTER if (ci in center_cols and not is_head) else None)
         if header and ri == 0:
             trpr = t.rows[0]._tr.get_or_add_trPr()
             th = OxmlElement("w:tblHeader"); th.set(qn("w:val"), "true"); trpr.append(th)
@@ -457,38 +492,11 @@ def figure(path, caption, chap, max_w=TEXT_W, max_h=7.9, border=True):
     if border:
         sppr = run._r.xpath(".//pic:spPr")[0]
         ln = OxmlElement("a:ln"); ln.set("w", "9525")
-        sf = OxmlElement("a:solidFill"); clr = OxmlElement("a:srgbClr"); clr.set("val", "7F7F7F"); sf.append(clr); ln.append(sf)
+        sf = OxmlElement("a:solidFill"); clr = OxmlElement("a:srgbClr"); clr.set("val", GRID); sf.append(clr); ln.append(sf)
         sppr.append(ln)
     FIG["n"][chap] = FIG["n"].get(chap, 0) + 1
     cp = doc.add_paragraph(style=S_CAP)
     cp.add_run(f"Figure {chap}.{FIG['n'][chap]}: {caption}")
-
-def code(text, title=None):
-    if title:
-        p = doc.add_paragraph(style=S_SUB); p.paragraph_format.space_before = Pt(6); p.add_run(title)
-    t = doc.add_table(rows=1, cols=1); t.alignment = WD_TABLE_ALIGNMENT.CENTER
-    c = t.cell(0, 0); c.width = Inches(TEXT_W); fix_widths(t, [TEXT_W])
-    tcpr = c._tc.get_or_add_tcPr()
-    b = OxmlElement("w:tcBorders")
-    for edge in ("top", "left", "bottom", "right"):
-        e = OxmlElement(f"w:{edge}"); e.set(qn("w:val"), "single"); e.set(qn("w:sz"), "6"); e.set(qn("w:color"), "808080"); b.append(e)
-    tcpr.append(b); shade(tcpr, "F2F2F2")
-    lines = text.rstrip("\n").split("\n")
-    c.paragraphs[0].style = S_CODE
-    for i, line in enumerate(lines):
-        p = c.paragraphs[0] if i == 0 else c.add_paragraph(style=S_CODE)
-        r = p.add_run(line if line else " ")
-        r.font.name = "Courier New"
-    doc.add_paragraph(style=S_BODY).paragraph_format.space_after = Pt(2)
-
-# ------------------------------------------------------------------ source extraction helpers
-MAIN = open(f"{REPO}/src/api/main.py").read()
-def func_src(name, strip_doc=True, keep_decorator=True):
-    m = re.search(rf"^((?:@app\.[^\n]+\n)?)(async )?def {name}\(.*?(?=^\S)", MAIN, re.S | re.M)
-    src = m.group(0).rstrip() + "\n"
-    if not keep_decorator: src = re.sub(r"^@app[^\n]+\n", "", src)
-    if strip_doc: src = re.sub(r'\n    """.*?"""\n', "\n", src, count=1, flags=re.S)
-    return src
 
 # =========================================================================================
 #                                   BODY  (new section)
@@ -695,8 +703,9 @@ section("2.2", "Development Description")
 para("Micro-SIEM was developed with a structured, modular approach so that each part of the pipeline could be built and "
      "verified independently before being connected to the next one.", indent_first=False)
 sub("A. Development Approach")
-para("The project followed an **Agile (iterative and incremental) methodology**. Work was divided into short sprints, each "
-     "delivering a working, testable piece of the system. The key phases were:", indent_first=False)
+para("The project followed the **Spiral model** of software development. Work was divided into five risk-driven cycles; "
+     "each cycle set its objectives, analysed the risks (especially security risks), built and tested one part of the "
+     "system and was evaluated before the next cycle was planned. The work covered the following phases:", indent_first=False)
 numbered([
     "**Requirement Analysis** – Studying SIEM concepts, MITRE ATT&CK techniques and the log formats to be collected.",
     "**System Design** – Designing the container architecture, data flow, index structure and detection rules.",
@@ -713,7 +722,7 @@ table([
     ["Log Ingestion", "Vector file sources, VRL parse_json transform, Elasticsearch-compatible bulk sink"],
     ["Storage & Search", "OpenSearch indices: logs-index, alerts-index, blocked-index"],
     ["Detection Engine", "Python, OpenSearch aggregations and scroll scan, asyncio background task"],
-    ["Alert Management", "Deterministic document IDs + create() for de-duplication"],
+    ["Alert Management", "Fixed alert IDs and create-only writes (no duplicates)"],
     ["Authentication & RBAC", "FastAPI dependencies, secrets.token_hex session tokens, environment variables (.env)"],
     ["Dashboards", "HTML, Tailwind CSS, JavaScript fetch API, Chart.js"],
     ["Reverse Proxy", "Nginx proxy_pass /api/, real_ip module"],
@@ -788,8 +797,8 @@ table([
 ], [1.55, 2.95, 0.65, 1.05], size=10)
 sub("4. Alert Management")
 para("Before writing an alert the engine checks whether the same alert type was raised for the same source IP in the last 5 "
-     "minutes. The alert document ID is built from the alert type, source IP and 5-minute time window and written with "
-     "OpenSearch **create()**, which refuses duplicates even if two detection runs overlap. Each alert stores the timestamp, "
+     "minutes. The alert document ID is built from the alert type, source IP and 5-minute time window and saved in "
+     "**create-only** mode, so OpenSearch refuses a duplicate even if two detection runs overlap. Each alert stores the timestamp, "
      "alert type, source IP, attempt count, severity, matched rule and the MITRE technique, ID and tactic.")
 sub("5. Admin Console")
 bullets(["Statistic cards: total logs, active alerts, suspicious IPs and login success rate.",
@@ -860,38 +869,68 @@ bullets(["**System usability**", ["Dark, terminal-style dashboards that are read
          "**Accessibility**", ["Dashboards (port 8090) and demo portal (port 8080) are reachable from any device on the LAN, each through a single port; the demo portal was also exposed through ngrok."]])
 sub("D. Schedule Feasibility")
 para("Schedule feasibility ensures that the project can be completed on time.", indent_first=False)
-bullets(["**Timeline evaluation**", ["The project followed a four-month plan (July – October 2026) divided into phases and sprints.",
-                                    "Agile sprints delivered a working pipeline early, reducing integration risk."],
-         "**Risk mitigation strategies**", ["Image versions pinned to avoid surprise breaking upgrades before the demonstration.",
-                                           "Regular testing after each sprint and a written progress log (PROGRESS.md)."]])
+bullets(["**Timeline evaluation**", ["The project followed a four-month plan (July – October 2026) divided into five Spiral cycles.",
+                                    "The early cycles delivered a working log pipeline first, reducing integration risk."],
+         "**Risk mitigation strategies**", ["A risk-analysis step at the start of every cycle, before any code was written.",
+                                           "Image versions pinned to avoid surprise breaking upgrades before the demonstration.",
+                                           "Testing and review at the end of each cycle and a written progress log (PROGRESS.md)."]])
 
 section("4.2", "Software Engineering Model")
-sub("A. Overview of the Agile Model")
-para("Micro-SIEM was developed using the **Agile (iterative and incremental) model**. Agile suits this project because the "
-     "system is a pipeline of independent components: each sprint could add one component, test it end-to-end with the "
-     "components already built, and adjust the plan based on what was learned (for example, adding the password-spraying "
-     "rule and the security hardening sprint after code review).")
-sub("➔ Iterative Development Process")
-bullets([
-    "Each feature (log source, rule, dashboard, security fix) was built in a short sprint and tested immediately.",
-    "Every sprint followed the cycle: plan → design → develop → test → review.",
-    "Problems found in testing (e.g. duplicate alerts, \"Invalid Date\" timestamps, spoofable IP header) were fed back into the next sprint.",
-    "Working software was available after every sprint, so the demonstration could be rehearsed early.",
+sub("A. Overview of the Spiral Model")
+para("Micro-SIEM was developed using the **Spiral model** (Barry Boehm). The Spiral model combines the step-by-step "
+     "structure of the Waterfall model with iterative development, and puts **risk analysis** at the centre of every "
+     "iteration. The project moves outwards in loops (cycles); every loop builds a bigger part of the system and passes "
+     "through the same four quadrants:")
+numbered([
+    "**Determine objectives, alternatives and constraints** – what this cycle must deliver, which tools or designs could "
+    "do it, and the limits (one laptop, 4-month schedule, free tools only).",
+    "**Identify and resolve risks** – list what could go wrong (technical and security risks), and resolve the biggest "
+    "ones first, by research, a small prototype or a design decision.",
+    "**Develop and test** – build the part planned for the cycle and test it with the parts already built.",
+    "**Evaluate and plan the next iteration** – review the result (with the internal guide), record findings in the "
+    "progress log and plan the objectives of the next cycle.",
 ])
-sub("B. Sprints of the Project")
+sub("B. Why the Spiral Model for a Security Project")
+para("A SIEM is a security tool, so its biggest risks are security risks: a SIEM that can be fooled, bypassed or "
+     "attacked itself is worse than no SIEM, because it gives a false feeling of safety. The Spiral model was chosen "
+     "because it makes this risk analysis a compulsory step of every cycle instead of something done only at the end:")
+bullets([
+    "**Risk-driven by design:** every cycle starts with \"what could go wrong?\", so threats are analysed before code is "
+    "written. Security is built in from the first cycle, not added as a last patch.",
+    "**The SIEM itself is attack surface:** risk analysis found real weaknesses in our own system – client-IP spoofing "
+    "through X-Forwarded-For that could hide or frame an attacker, stored XSS in the admin dashboard through a fake IP, "
+    "a brute-forceable dashboard login and an OpenSearch port open without authentication – and each was fixed in the "
+    "following engineering step (implementation in Chapter 6, tests in Chapter 7).",
+    "**Dangerous features are prototyped first:** automatic IP blocking could lock the administrator out of their own "
+    "machine. It was prototyped with safety checks (loopback, own IP and Docker network refused) and kept switched off "
+    "behind a flag until it is fully tested, instead of being shipped as-is.",
+    "**Detection quality is a risk too:** missed attacks (false negatives) and false alarms (false positives) were "
+    "checked in every evaluation step – for example, URL-encoded XSS payloads that were missed and brute force that "
+    "also fired on password spraying were found and fixed in a later cycle.",
+    "**New threats fit into the next loop:** when a new attack technique became relevant (password spraying, "
+    "T1110.003), it was added as the objective of a later cycle without restarting the project.",
+    "**Review before moving on:** the evaluation quadrant acted as a security sign-off with the internal guide before "
+    "the next cycle started, which suits a project that must be demonstrated live.",
+])
+sub("C. Cycles (Loops) of the Project")
 table([
-    ["Sprint", "Goal", "Deliverable"],
-    ["1", "Infrastructure", "Docker Compose stack: OpenSearch, OpenSearch Dashboards, Vector; first events indexed"],
-    ["2", "Backend + demo portal", "FastAPI service, demo login/search pages, Nginx JSON access log"],
-    ["3", "Detection", "Brute force, correlation and XSS rules; alert index with MITRE mapping; later password spraying"],
-    ["4", "Dashboards + auth", "Admin and viewer dashboards, token sessions, role-based access control"],
-    ["5", "Response", "IP and account blocking (later disabled behind a Coming Soon popup)"],
-    ["6", "Hardening", "Trusted-proxy IP handling, escaping, rate limiting, background detection, aggregation queries, pinned versions"],
-], [0.7, 1.6, 3.9], center_cols=(0,))
-sub("C. Advantages of the Agile Model for this Project")
-bullets(["Early working pipeline reduced the risk of late integration failures.",
-         "Flexible scope: new rules and fixes were added when their need became clear.",
-         "Continuous testing produced a reliable system for the live demonstration."])
+    ["Cycle", "Objective", "Key risks analysed", "Deliverable"],
+    ["1", "Requirements & concept", "Wrong scope, tools too heavy for one laptop, rules without a real threat model",
+     "Scope, four rules mapped to MITRE ATT&CK / CWE, tool choice (OpenSearch, Vector, FastAPI)"],
+    ["2", "Architecture & log pipeline", "Lost or wrongly parsed events, OpenSearch version incompatibilities",
+     "Docker Compose stack; web-login and Nginx events indexed in logs-index"],
+    ["3", "Backend & detection", "False positives / negatives, duplicate alerts, big attacks under-counted",
+     "FastAPI service, demo portal, brute force, spraying, correlation and XSS rules, alert index"],
+    ["4", "Dashboards, auth & response", "Unauthorised access, viewer using admin actions, blocking own machine",
+     "Admin and viewer dashboards, token sessions, role checks, blocking module (kept disabled)"],
+    ["5", "Security hardening & validation", "IP spoofing, stored XSS, dashboard brute force, exposed database",
+     "Trusted-proxy IP handling, output escaping, rate limiting, localhost-only OpenSearch, live end-to-end tests"],
+], [0.55, 1.35, 2.15, 2.2], center_cols=(0,), size=10)
+sub("D. Advantages of the Spiral Model for this Project")
+bullets(["Security risks were found and fixed during development, before the live demonstration.",
+         "A working log pipeline existed early (cycle 2), which reduced the risk of late integration failures.",
+         "Flexible scope: new rules and fixes were added in later cycles when their need became clear.",
+         "Testing and evaluation at the end of every cycle produced a reliable system for the demonstration."])
 
 section("4.3", "Requirement Analysis and Data Gathering")
 sub("A. Data Gathering Techniques")
@@ -928,7 +967,9 @@ table([
 ], [0.8, 1.3, 4.1], center_cols=(0,))
 
 section("4.4", "Time Line Chart", new_page=True)
-para("The project was planned over four months. The Gantt chart below shows the phases and sprints.", indent_first=False)
+para("The project was planned over four months (July – October 2026) as five Spiral cycles. The Gantt chart below "
+     "shows each cycle split into its four quadrants – objectives, risk analysis, development and testing, and "
+     "evaluation – followed by documentation.", indent_first=False)
 figure(f"{DIAG}/gantt.png", "Project Time Line (Gantt) Chart", 4)
 
 # =========================================================================================
@@ -1038,34 +1079,38 @@ table([
 chapter(6, "System Implementation")
 section("6.1", "Source Code / Screen Shots")
 sub("6.1.1 Source Code")
-para("The most important parts of the implementation are shown below. The complete source code is available in the project "
-     "repository (src/api/main.py, vector/vector.toml, nginx/, react-dashboard/ and docker-compose.yml).", indent_first=False)
-
-compose = open(f"{REPO}/docker-compose.yml").read()
-def compose_service(name):
-    m = re.search(rf"^  {name}:\n.*?(?=^  #|^\S|\Z)", compose, re.S | re.M)
-    return re.sub(r"^\s*#.*\n", "", m.group(0), flags=re.M)
-code(compose_service("opensearch") + compose_service("api"), "A) docker-compose.yml – OpenSearch and API services (excerpt)")
-vt = open(f"{REPO}/vector/vector.toml").read()
-vt = re.sub(r"^#.*\n", "", vt, flags=re.M); vt = re.sub(r"\n{3,}", "\n\n", vt).strip()
-code(vt, "B) vector/vector.toml – log ingestion pipeline")
-ng = open(f"{REPO}/nginx/default.conf").read()
-ng = re.sub(r"^\s*#.*\n", "", ng, flags=re.M)
-code(ng, "C) nginx/default.conf – JSON access log, trusted real IP and API proxy")
-code(func_src("get_client_ip"), "D) main.py – validated client IP (prevents IP spoofing and stored XSS)")
-code(func_src("web_login"), "E) main.py – demo login endpoint (log source)")
-code(func_src("_detection_loop") + "\n" + func_src("_write_alert"), "F) main.py – background detection loop and de-duplicated alert writing")
-code(func_src("_run_brute_force_rule"), "G) main.py – Brute force rule (MITRE T1110)")
-code(func_src("_run_password_spraying_rule"), "H) main.py – Password spraying rule (MITRE T1110.003)")
-code(func_src("_run_correlation_rule"), "I) main.py – Fail-then-success correlation rule (MITRE T1078)")
-code(func_src("_decoded_path") + "\n" + func_src("_run_xss_detection"), "J) main.py – XSS signature rule (CWE-79)")
-code(func_src("dashboard_login"), "K) main.py – dashboard login with rate limiting and logging")
-code(func_src("require_session") + "\n" + func_src("require_admin"), "L) main.py – session and role checks (RBAC)")
-adm = open(f"{REPO}/react-dashboard/admin.html").read()
-def js_fn(name):
-    m = re.search(rf"^( *)function {name}\(.*?^\1}}\n", adm, re.S | re.M)
-    return re.sub(r"^ {8}", "", m.group(0), flags=re.M)
-code(js_fn("toIST") + "\n" + js_fn("logDetail") + "\n" + js_fn("escapeHtml"), "M) admin.html – time conversion, readable log details and HTML escaping")
+para("The complete source code is kept in the project repository; instead of printing long listings, the table below "
+     "explains what each part of the implementation does. The screenshots in Section 6.1.2 show the result of this code "
+     "running, and Chapter 7 shows how it was tested.", indent_first=False)
+table([
+    ["File / Component", "What it does"],
+    ["docker-compose.yml", "Starts all six containers with one command, pins every image version, keeps OpenSearch reachable only "
+     "from the host itself and waits until OpenSearch is healthy before starting the other services."],
+    ["vector/vector.toml", "Reads the web-login log and the Nginx access log, parses each JSON line and ships the events to the "
+     "logs-index in OpenSearch; remembers its read position so no line is lost or read twice after a restart."],
+    ["nginx/default.conf", "Serves the demo portal, writes every request as a JSON access-log line and passes the real client IP "
+     "to the API (an IP header is trusted only from the Docker network or the host itself)."],
+    ["main.py – client IP check", "Works out the real source IP of each request and rejects fake or malformed IP headers, which "
+     "stops attackers from hiding or framing someone else and blocks stored XSS through the IP field."],
+    ["main.py – demo login", "The login of the demo portal; every attempt (success, failure, blocked account) is written to the "
+     "web-login log with time, username and source IP."],
+    ["main.py – detection loop", "Runs all four rules every 5 seconds in the background, whether or not a dashboard is open, and "
+     "writes at most one alert per rule per source IP in each 5-minute window."],
+    ["main.py – brute force rule", "Raises an alert when one IP fails to log in 5 or more times on the same username within "
+     "2 minutes (MITRE T1110)."],
+    ["main.py – password spraying rule", "Raises an alert when one IP fails against 3 or more different usernames within "
+     "5 minutes (MITRE T1110.003)."],
+    ["main.py – correlation rule", "Raises an alert when an IP logs in successfully after earlier failed attempts – a "
+     "possibly guessed password (MITRE T1078)."],
+    ["main.py – XSS rule", "Decodes each requested URL and looks for known XSS patterns such as script tags and event "
+     "handlers (OWASP / CWE-79)."],
+    ["main.py – dashboard login", "Checks the admin / viewer password, allows at most 5 failures per IP in 5 minutes and logs "
+     "every dashboard login attempt."],
+    ["main.py – role checks", "Every API call needs a valid session; admin-only actions (block / unblock) are refused for the "
+     "viewer role on the server side."],
+    ["admin.html / viewer.html", "The dashboards: show times in IST, turn raw log lines into readable details and escape every "
+     "value before showing it, so log data can never run as script in the browser."],
+], [1.9, 4.3], first_col_bold=True, size=10.5)
 
 sub("6.1.2 Screen Shots")
 SHOT_SIZE = {  # cropped screenshots are shown smaller than full-width ones
@@ -1247,7 +1292,7 @@ table([
     ["Tools & Technologies", "Backend: Python, FastAPI, Uvicorn\nStorage: OpenSearch, OpenSearch Dashboards\nLog pipeline: Vector\n"
               "Web server: Nginx\nFrontend: HTML, Tailwind CSS, JavaScript, Chart.js\nDeployment: Docker, Docker Compose\n"
               "Diagrams: Graphviz, Matplotlib\nVersion control: Git, GitHub"],
-], [1.45, 4.75], first_col_bold=True, header_fill="B4C6E7", size=10.5)
+], [1.45, 4.75], first_col_bold=True, size=10.5)
 
 # =========================================================================================
 # INDEX page numbers
